@@ -218,7 +218,7 @@
     clearSession();
     urlPin = '';
     $('#pin-input').value = '';
-    history.replaceState(null, '', '/');
+    history.replaceState(null, '', '/join');
     showJoin();
   }
   $('#again-btn').addEventListener('click', joinFresh);

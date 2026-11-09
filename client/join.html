@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fdf9f3">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Join · roundtable</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/fredoka.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="player">
+  <!-- Join -->
+  <section class="screen" id="screen-join" hidden>
+    <a class="page-logo" href="/"><span class="wordmark" data-wordmark>roundtable</span></a>
+    <form class="card join-card" id="join-form" autocomplete="off">
+      <input class="input input-pin" id="pin-input" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" placeholder="Game PIN" aria-label="Game PIN" required>
+      <input class="input" id="name-input" maxlength="16" placeholder="Nickname" aria-label="Nickname" autocapitalize="words" enterkeyhint="go" required>
+      <button class="btn btn-primary btn-big btn-block" id="join-btn" type="submit">Enter</button>
+      <p class="error" id="join-error"></p>
+    </form>
+    <a class="muted" href="/host">Want to host a game?</a>
+  </section>
+
+  <!-- Connecting / loading -->
+  <section class="screen" id="screen-loading">
+    <div class="spinner"></div>
+  </section>
+
+  <!-- Lobby -->
+  <section class="screen" id="screen-lobby" hidden>
+    <p class="big-title">You're in!</p>
+    <div class="big-name" id="lobby-name"></div>
+    <p class="muted">See your nickname on screen?<br>The game will start soon.</p>
+    <p class="muted" id="lobby-title"></p>
+    <button class="btn btn-small" id="leave-btn" type="button">Leave game</button>
+  </section>
+
+  <!-- Get ready -->
+  <section class="screen" id="screen-intro" hidden>
+    <p class="muted" id="intro-counter"></p>
+    <p class="big-title">Get ready!</p>
+    <span class="badge-double" id="intro-double" hidden>Double points!</span>
+    <div class="progress"><div id="intro-progress"></div></div>
+  </section>
+
+  <!-- Answer buttons -->
+  <section class="screen question-screen" id="screen-question" hidden>
+    <div class="p-qhead">
+      <span id="p-qcounter"></span>
+      <div class="p-timer" id="p-timer"></div>
+    </div>
+    <p class="p-qtext" id="p-qtext"></p>
+    <div class="answer-grid" id="p-answers"></div>
+  </section>
+
+  <!-- Waiting after answering -->
+  <section class="screen" id="screen-answered" hidden>
+    <div id="answered-shape"></div>
+    <p class="big-title">Answer locked in!</p>
+    <div class="spinner"></div>
+    <p class="muted">Waiting for everyone else…</p>
+  </section>
+
+  <!-- Joined mid-question -->
+  <section class="screen" id="screen-wait" hidden>
+    <p class="big-title">Hang tight</p>
+    <div class="spinner"></div>
+    <p class="muted">You'll be playing from the next question.</p>
+  </section>
+
+  <!-- Result of a question -->
+  <section class="screen result-screen" id="screen-result" hidden>
+    <div class="result-icon" id="result-icon"></div>
+    <p class="big-title" id="result-title"></p>
+    <div class="points-pill" id="result-points"></div>
+    <div class="streak-pill" id="result-streak"></div>
+    <p class="rank-text" id="result-rank"></p>
+  </section>
+
+  <!-- Final placing -->
+  <section class="screen" id="screen-final" hidden>
+    <p class="muted">You finished</p>
+    <div class="final-rank" id="final-rank"></div>
+    <p class="rank-text" id="final-detail"></p>
+    <button class="btn btn-primary btn-big" id="again-btn" type="button">Join another game</button>
+  </section>
+
+  <!-- Ended / kicked -->
+  <section class="screen" id="screen-ended" hidden>
+    <p class="big-title" id="ended-msg"></p>
+    <button class="btn btn-primary btn-big" id="ended-btn" type="button">Join a game</button>
+  </section>
+
+  <footer class="player-bar" id="player-bar" hidden>
+    <span id="bar-name"></span>
+    <span class="score" id="bar-score">0</span>
+  </footer>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/player.js"></script>
+</body>
+</html>

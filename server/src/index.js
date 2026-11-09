@@ -142,7 +142,7 @@ io.on('connection', (socket) => {
       }
 
       const pin = newPin();
-      const joinUrl = `${baseUrlFor(socket)}/?pin=${pin}`;
+      const joinUrl = `${baseUrlFor(socket)}/join?pin=${pin}`;
       const qr = await QRCode.toDataURL(joinUrl, { margin: 1, width: 600, errorCorrectionLevel: 'M' });
       const game = new Game({
         io,

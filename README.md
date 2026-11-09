@@ -1,13 +1,15 @@
-# Roundtable Trivia
+# roundtable — pull up a chair
 
 A live, Kahoot-style trivia game. The **host** puts a lobby on a big screen with a QR code and game PIN, players join from their **phones**, and everyone races to tap the right answer. Faster correct answers score more.
 
 ```
 Roundtable/
 ├── client/              ← the website (plain HTML/CSS/JS, no build step)
-│   ├── index.html       ← player screen (phones): join + answer buttons
+│   ├── index.html       ← landing page: short intro + Join / Host buttons
+│   ├── join.html        ← player screen (phones): join + answer buttons
 │   ├── host.html        ← host screen (TV/projector/laptop): lobby, questions, scores
-│   ├── css/style.css
+│   ├── css/style.css    ← all styling; brand colours are variables at the top
+│   ├── fonts/           ← Fredoka (SIL Open Font License), served locally
 │   └── js/              ← common.js, host.js, player.js
 └── server/              ← the backend (Node.js + Socket.IO), also serves the website
     ├── src/             ← index.js (web server), game.js (game rules), trivia.js (set loader)
@@ -78,7 +80,7 @@ sudo bash server/setup.sh --public-url https://trivia.example.com
 sudo bash server/setup.sh --uninstall
 ```
 
-**Updating:** copy your changed files over the old ones and run `sudo bash server/setup.sh` again. Your settings and any trivia sets you added on the server are kept.
+**Updating:** from the folder you cloned, run `git pull && sudo bash server/setup.sh`. It doesn't ask any questions on an update. Your settings (domain, password) and any trivia sets you added on the server are kept.
 
 ### Everyday commands
 

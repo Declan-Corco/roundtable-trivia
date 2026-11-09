@@ -3,17 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0d1524">
-  <title>Host · Roundtable Trivia</title>
+  <meta name="theme-color" content="#fdf9f3">
+  <title>Host · roundtable</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/fredoka.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body class="host">
   <header class="topbar">
-    <span class="logo"><span class="logo-mark"></span>Roundtable</span>
+    <a class="wordmark" href="/" data-wordmark>roundtable</a>
     <div class="actions">
-      <button class="btn btn-small btn-ghost" id="fullscreen-btn" type="button">Fullscreen</button>
-      <button class="btn btn-small btn-ghost" id="end-btn" type="button" hidden>End game</button>
+      <button class="btn btn-small" id="fullscreen-btn" type="button">Fullscreen</button>
+      <button class="btn btn-small" id="end-btn" type="button" hidden>End game</button>
     </div>
   </header>
 
@@ -37,7 +38,7 @@
     <div class="lobby">
       <div class="lobby-top">
         <div class="join-box">
-          <div>Join at <span class="join-url" id="join-url"></span></div>
+          <div class="join-line">Go to <span class="join-url" id="join-url"></span> and tap <strong>Join</strong></div>
           <div class="pin-label">Game PIN:</div>
           <div class="pin" id="lobby-pin"></div>
         </div>
@@ -52,7 +53,7 @@
         </div>
       </div>
       <ul class="player-chips" id="player-list"></ul>
-      <p class="waiting" id="waiting-msg">Waiting for players…</p>
+      <div class="waiting" id="waiting-msg"><div class="spinner"></div>Waiting for players…</div>
       <p class="muted" id="kick-hint" hidden>Click a name to remove that player.</p>
     </div>
   </section>

@@ -8,6 +8,32 @@
   ];
   const SHAPE_NAMES = ['Triangle', 'Diamond', 'Circle', 'Square'];
 
+  // ---- Brand marks (inline SVG so they inherit the page's colours) ----
+  // Six seats around the table: red top/bottom, yellow on the right-top/left-bottom, teal on the others.
+  const SEATS = [
+    [0, -1, 'red'], [0.866, -0.5, 'yellow'], [0.866, 0.5, 'teal'],
+    [0, 1, 'red'], [-0.866, 0.5, 'yellow'], [-0.866, -0.5, 'teal'],
+  ];
+  const seats = (dist, r) =>
+    SEATS.map(([x, y, c]) => `<circle cx="${(x * dist).toFixed(1)}" cy="${(y * dist).toFixed(1)}" r="${r}" class="d-${c}"/>`).join('');
+  /** "The Table" mark: a wooden table with six coloured seats. */
+  const MARK_SVG =
+    `<svg viewBox="-50 -50 100 100" aria-hidden="true">${seats(40, 7.5)}` +
+    '<circle r="24" class="t-top"/><circle r="13" class="t-ring"/></svg>';
+  /** The "o" in the roundtable wordmark: a solid table with small seats. */
+  const WORDMARK_O = `<svg class="wm-o" viewBox="-50 -50 100 100" aria-hidden="true">${seats(36, 6.5)}<circle r="20" class="t-solid"/></svg>`;
+
+  /** Fills every [data-wordmark] with the logo and every .spinner with a spinning table. */
+  function hydrateBrand(root = document) {
+    root.querySelectorAll('[data-wordmark]').forEach((n) => {
+      n.innerHTML = `r${WORDMARK_O}undtable`;
+      n.setAttribute('aria-label', 'roundtable');
+    });
+    root.querySelectorAll('.spinner, [data-mark]').forEach((n) => (n.innerHTML = MARK_SVG));
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => hydrateBrand());
+  else hydrateBrand();
+
   const $ = (sel, root = document) => root.querySelector(sel);
 
   /** Tiny element builder: el('div', {className: 'x', onclick}, 'text', childNode) */
@@ -118,5 +144,5 @@
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   };
 
-  window.RT = { $, el, shape, showScreen, request, countdown, toast, watchConnection, storage, ordinal, SHAPE_NAMES };
+  window.RT = { $, el, shape, showScreen, request, countdown, toast, watchConnection, storage, ordinal, SHAPE_NAMES, MARK_SVG };
 })();

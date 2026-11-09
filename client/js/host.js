@@ -176,7 +176,7 @@
   }
 
   function renderLobby(s) {
-    $('#join-url').textContent = s.joinUrl.replace(/^https?:\/\//, '').replace(/\/\?pin=\d+$/, '');
+    $('#join-url').textContent = s.joinUrl.replace(/^https?:\/\//, '').replace(/\/(join)?\?pin=\d+$/, '');
     $('#lobby-pin').textContent = s.pin.replace(/(\d{3})(\d{3})/, '$1 $2');
     $('#qr').src = s.qr;
     $('#lobby-title').textContent = s.title;

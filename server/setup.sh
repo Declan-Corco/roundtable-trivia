@@ -16,7 +16,7 @@
 #   4. (with a domain) Installs Caddy, which gets a free HTTPS certificate automatically
 #   5. Opens the firewall ports
 #
-#  Re-run it any time to update the app after you change files — your settings are kept.
+#  To update:  git pull && sudo bash server/setup.sh   (your settings are kept)
 #  Supports Debian / Ubuntu / Raspberry Pi OS (apt) and Fedora / RHEL / Rocky / Alma (dnf).
 # =============================================================================
 set -euo pipefail
@@ -97,6 +97,13 @@ pm_install() {
 CURRENT_PUBLIC_URL=""
 [[ -f "$ENV_FILE" ]] && CURRENT_PUBLIC_URL="$(grep -E '^PUBLIC_URL=' "$ENV_FILE" | cut -d= -f2- || true)"
 
+if [[ -z "$MODE" && -f "$ENV_FILE" ]]; then
+  # Already installed: this is an update, so keep the existing settings without asking.
+  MODE="keep"
+  echo "Updating — keeping your current settings${CURRENT_PUBLIC_URL:+ (${CURRENT_PUBLIC_URL})}."
+  echo "To change how players reach the server, re-run with --domain, --lan or --public-url."
+fi
+
 if [[ -z "$MODE" ]]; then
   if [[ -t 0 ]]; then
     echo
@@ -104,15 +111,13 @@ if [[ -z "$MODE" ]]; then
     echo "  1) With my own domain name, e.g. trivia.example.com (sets up free HTTPS)"
     echo "  2) Only on my local network / Wi-Fi (no domain)"
     echo "  3) Through Cloudflare Tunnel or another proxy I set up myself"
-    [[ -n "$CURRENT_PUBLIC_URL" ]] && echo "  4) Keep current settings (${CURRENT_PUBLIC_URL})"
-    read -rp "Choose [1-4]: " choice
+    read -rp "Choose [1-3]: " choice
     case "$choice" in
       1) MODE="domain"; read -rp "Domain name (e.g. trivia.example.com): " DOMAIN
          read -rp "Email for HTTPS certificate notices (optional, Enter to skip): " EMAIL ;;
       2) MODE="lan" ;;
       3) MODE="public-url"; read -rp "Public URL players will use (e.g. https://trivia.example.com): " PUBLIC_URL_ARG ;;
-      4) MODE="keep" ;;
-      *) die "Please run again and pick 1, 2, 3 or 4." ;;
+      *) die "Please run again and pick 1, 2 or 3." ;;
     esac
   else
     MODE="keep"
