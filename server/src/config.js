@@ -24,6 +24,12 @@ module.exports = {
   // If set, the host screen asks for this password before creating a game.
   // Recommended when the site is public on the internet.
   HOST_PASSWORD: process.env.HOST_PASSWORD || '',
+  // iOS app ID(s) allowed to open join links straight from the Camera (universal links),
+  // as TEAMID.bundle.id, comma-separated. Example: ABCDE12345.site.round-table.app
+  APPLE_APP_IDS: (process.env.APPLE_APP_ID || process.env.APPLE_APP_IDS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
   MAX_PLAYERS: int('MAX_PLAYERS', 200),
   MAX_GAMES: int('MAX_GAMES', 50),
 };

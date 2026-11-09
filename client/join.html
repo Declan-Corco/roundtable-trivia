@@ -19,8 +19,10 @@
       <input class="input input-pin" id="pin-input" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" placeholder="Game PIN" aria-label="Game PIN" required>
       <input class="input" id="name-input" maxlength="16" placeholder="Nickname" aria-label="Nickname" autocapitalize="words" enterkeyhint="go" required>
       <button class="btn btn-primary btn-big btn-block" id="join-btn" type="submit">Enter</button>
+      <button class="btn btn-block app-only" id="scan-btn" type="button">Scan the QR code</button>
       <p class="error" id="join-error"></p>
     </form>
+    <a class="open-in-app" id="open-in-app" hidden>Got the roundtable app? <strong>Open this game in it</strong></a>
     <a class="muted" href="/host">Want to host a game?</a>
   </section>
 

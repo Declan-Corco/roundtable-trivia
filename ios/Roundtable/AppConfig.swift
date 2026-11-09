@@ -18,6 +18,48 @@ enum AppConfig {
         guard let host = url.host?.lowercased(), let home = startURL.host?.lowercased() else { return false }
         return host == home || host == "www." + home || "www." + host == home
     }
+
+    /// A link that opened the app → the page to show.
+    /// - `https://round-table.site/join?pin=…` (universal link from the Camera) → itself
+    /// - `roundtable://join?pin=…` (the "Open in app" link) → `https://round-table.site/join?pin=…`
+    static func resolve(_ url: URL) -> URL? {
+        switch url.scheme?.lowercased() {
+        case "roundtable":
+            var components = URLComponents(url: startURL, resolvingAgainstBaseURL: false)
+            let parts = ([url.host ?? ""] + url.pathComponents).filter { !$0.isEmpty && $0 != "/" }
+            components?.path = "/" + parts.joined(separator: "/")
+            components?.query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.query
+            return components?.url
+        case "https", "http":
+            return isInternal(url) ? url : nil
+        default:
+            return nil
+        }
+    }
+
+    /// Text from a scanned QR code → the join page to open, or nil if it isn't a roundtable game.
+    static func joinURL(fromScanned text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let url = URL(string: trimmed), url.scheme != nil {
+            if let resolved = resolve(url) { return resolved }
+            // A join code from another roundtable server (e.g. a LAN test server): reuse its PIN here.
+            if let pin = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "pin" })?.value {
+                return join(pin: pin)
+            }
+            return nil
+        }
+        return join(pin: trimmed) // a bare 6-digit PIN
+    }
+
+    private static func join(pin: String) -> URL? {
+        let digits = pin.filter(\.isNumber)
+        guard digits.count == 6 else { return nil }
+        var components = URLComponents(url: startURL, resolvingAgainstBaseURL: false)
+        components?.path = "/join"
+        components?.queryItems = [URLQueryItem(name: "pin", value: digits)]
+        return components?.url
+    }
 }
 
 extension Color {

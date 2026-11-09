@@ -26,6 +26,12 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        // roundtable://join?pin=… ("Open in app" link) and https://…/join?pin=… (universal links from
+        // the Camera when the app is signed with a paid account) open the game inside the app.
+        .onOpenURL { url in model.open(url) }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { model.open(url) }
+        }
     }
 }
 

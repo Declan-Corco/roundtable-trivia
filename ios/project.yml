@@ -13,6 +13,7 @@ settings:
     MARKETING_VERSION: "1.0.0"      # version shown in the App Store
     CURRENT_PROJECT_VERSION: "1"    # build number; bump for every TestFlight/App Store upload
     RT_SERVER_URL: "https://round-table.site"  # the server the app opens
+    RT_LINK_DOMAIN: "round-table.site"         # domain whose /join links open the app (universal links)
     DEVELOPMENT_TEAM: ""            # your Apple Developer Team ID, for signed builds (or pass TEAM_ID to the script)
 
 targets:
@@ -38,6 +39,11 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         RTServerURL: $(RT_SERVER_URL)
+        NSCameraUsageDescription: Scan the QR code on the host screen to join a game.
+        # roundtable://join?pin=123456 opens the app (used by the "Open in app" link on the join page)
+        CFBundleURLTypes:
+          - CFBundleURLName: site.round-table.app
+            CFBundleURLSchemes: [roundtable]
         LSRequiresIPhoneOS: true
         ITSAppUsesNonExemptEncryption: false
         UIUserInterfaceStyle: Light
@@ -57,4 +63,12 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true  # lets a test build open a plain-http server on your LAN
+    # Universal links: scanning a join QR code with the Camera opens the app directly.
+    # Needs a paid Apple Developer account (signed build) and APPLE_APP_ID set on the server.
+    # Unsigned builds (Sideloadly/AltStore) ignore this.
+    entitlements:
+      path: Roundtable/Roundtable.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - applinks:$(RT_LINK_DOMAIN)
     scheme: {}

@@ -23,7 +23,30 @@
     if (!pinInput.value && urlPin) pinInput.value = urlPin;
     showScreen('screen-join');
     (pinInput.value ? $('#name-input') : pinInput).focus({ preventScroll: true });
+    offerApp();
   }
+
+  // ------------------------------------------------------------- iOS app hand-off
+
+  const inApp = () => document.documentElement.classList.contains('ios-app');
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  /** In iPhone Safari after scanning a QR code: offer to open the same game in the roundtable app. */
+  function offerApp() {
+    const link = $('#open-in-app');
+    const pin = $('#pin-input').value.replace(/\D/g, '');
+    link.hidden = !(isIOS && !inApp() && pin.length === 6);
+    link.href = `roundtable://join?pin=${pin}`;
+  }
+
+  /** Inside the app: the native QR scanner opens the scanned game's join link. */
+  $('#scan-btn').addEventListener('click', () => {
+    try {
+      window.webkit.messageHandlers.scan.postMessage('scan');
+    } catch {
+      toast('Scanning is only available in the roundtable app.');
+    }
+  });
 
   $('#join-form').addEventListener('submit', async (e) => {
     e.preventDefault();

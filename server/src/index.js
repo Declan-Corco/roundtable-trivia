@@ -84,6 +84,18 @@ app.get('/api/sets', (_req, res) => {
   });
 });
 
+// Apple universal links: lets the iOS app open /join links (e.g. from the QR code) directly.
+// Only served when APPLE_APP_ID is set; Apple fetches this from https://<domain>/.well-known/…
+app.get(['/.well-known/apple-app-site-association', '/apple-app-site-association'], (_req, res) => {
+  if (!config.APPLE_APP_IDS.length) return res.status(404).json({ error: 'APPLE_APP_ID is not set' });
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.json({
+    applinks: {
+      details: [{ appIDs: config.APPLE_APP_IDS, components: [{ '/': '/join*', comment: 'Join a game' }] }],
+    },
+  });
+});
+
 app.get('/healthz', (_req, res) => res.json({ ok: true, games: games.size }));
 
 // ------------------------------------------------------------- helpers

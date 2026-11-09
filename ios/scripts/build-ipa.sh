@@ -24,6 +24,8 @@ cd "$(dirname "$0")/.."
 
 SERVER_URL="${RT_SERVER_URL:-https://round-table.site}"
 EXPORT_METHOD="${EXPORT_METHOD:-app-store-connect}"
+# Domain whose /join links (the QR code) open the app via universal links, e.g. round-table.site
+LINK_DOMAIN="$(printf '%s' "$SERVER_URL" | sed -E 's|^[a-zA-Z]+://||; s|[:/].*$||')"
 
 command -v xcodebuild >/dev/null || { echo "xcodebuild not found — this needs a Mac with Xcode installed."; exit 1; }
 command -v xcodegen >/dev/null || { echo "XcodeGen not found. Install it with: brew install xcodegen"; exit 1; }
@@ -37,7 +39,7 @@ if [[ -n "${TEAM_ID:-}" ]]; then
   echo "==> Archiving signed build (team $TEAM_ID, server $SERVER_URL)"
   xcodebuild -project Roundtable.xcodeproj -scheme Roundtable -configuration Release \
     -destination 'generic/platform=iOS' -archivePath build/Roundtable.xcarchive \
-    DEVELOPMENT_TEAM="$TEAM_ID" RT_SERVER_URL="$SERVER_URL" \
+    DEVELOPMENT_TEAM="$TEAM_ID" RT_SERVER_URL="$SERVER_URL" RT_LINK_DOMAIN="$LINK_DOMAIN" \
     -allowProvisioningUpdates -quiet archive
 
   cat > build/ExportOptions.plist <<EOF
@@ -59,11 +61,18 @@ EOF
     -exportOptionsPlist build/ExportOptions.plist -allowProvisioningUpdates -quiet
   cp build/export/*.ipa build/roundtable.ipa
   echo "==> Done: ios/build/roundtable.ipa"
+
+  BUNDLE_ID="$(xcodebuild -project Roundtable.xcodeproj -target Roundtable -showBuildSettings 2>/dev/null \
+    | awk -F' = ' '/ PRODUCT_BUNDLE_IDENTIFIER /{print $2; exit}')"
+  echo ""
+  echo "To make the join QR code open this app straight from the Camera, add this line to"
+  echo "/etc/roundtable.env on your server, then run: sudo systemctl restart roundtable"
+  echo "  APPLE_APP_ID=${TEAM_ID}.${BUNDLE_ID}"
 else
   echo "==> Building unsigned app (server $SERVER_URL)"
   xcodebuild -project Roundtable.xcodeproj -scheme Roundtable -configuration Release \
     -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \
-    RT_SERVER_URL="$SERVER_URL" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+    RT_SERVER_URL="$SERVER_URL" RT_LINK_DOMAIN="$LINK_DOMAIN" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
     -quiet build
 
   APP="build/DerivedData/Build/Products/Release-iphoneos/Roundtable.app"

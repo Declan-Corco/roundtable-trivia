@@ -8,10 +8,30 @@ A native iPhone and iPad app around the roundtable website. The app opens **http
 - No browser bars, so the game uses the whole screen.
 - The screen stays awake during games.
 - Native haptics when you tap an answer, plus a success buzz when you're right.
+- A built-in **QR scanner** for joining games, and join links can open the app (see below).
 - A "Can't reach the table" screen with **Try again** when there's no connection.
 - Links to other websites open in Safari.
 - Players stay signed in to their game if they switch apps or relaunch.
 - Works on iPad too, which makes a good host screen.
+
+## Opening games from the QR code
+
+The lobby's QR code is a normal web link (`https://round-table.site/join?pin=…`), so people without the app can still join from their browser. There are three ways it opens the app instead:
+
+| How | Works with the free (sideloaded) app? | What the player does |
+|---|---|---|
+| **Scan inside the app** | Yes | Opens the app and taps **Scan the QR code** on the join screen. |
+| **"Open in app" link** | Yes | Scans with the Camera as usual. On the join page in Safari, taps **Open this game in it**, and the app opens straight into that game. |
+| **Universal link** | No, it needs a paid Apple Developer account | Scans with the Camera, and iOS offers to open the **roundtable app** directly. |
+
+To turn on universal links:
+
+1. Build a signed app: `TEAM_ID=ABCDE12345 bash scripts/build-ipa.sh`. When it finishes, it prints the exact `APPLE_APP_ID=…` line to use.
+2. On your server, add that line to `/etc/roundtable.env` (for example `APPLE_APP_ID=ABCDE12345.site.round-table.app`), then run `sudo systemctl restart roundtable`.
+3. Check that https://round-table.site/.well-known/apple-app-site-association now shows your app ID.
+4. Install the signed app (TestFlight). iOS checks the link file when the app is installed, so reinstall it if you set this up afterwards.
+
+The domain the app claims comes from the server URL. If you host somewhere else, change `RT_SERVER_URL` and `RT_LINK_DOMAIN` in `project.yml`.
 
 ```
 ios/

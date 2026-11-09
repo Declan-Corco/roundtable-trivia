@@ -697,3 +697,15 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 
 /* Inside the iOS app: fullscreen is not available in iPhone web views */
 .ios-app #fullscreen-btn { display: none; }
+/* Native extras that only exist inside the iOS app (e.g. the QR scanner) */
+.app-only { display: none; }
+.ios-app .app-only { display: inline-flex; }
+.open-in-app {
+  background: var(--white);
+  border-radius: 999px;
+  padding: 10px 18px;
+  box-shadow: var(--shadow-card);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+.open-in-app strong { color: var(--teal); }
