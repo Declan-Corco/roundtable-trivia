@@ -1,0 +1,43 @@
+# Builds the roundtable iOS app on GitHub's Macs, so no Mac is needed.
+# Download the .ipa from the run's "Artifacts" section.
+name: iOS app
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: Server the app opens
+        default: https://round-table.site
+        required: false
+  push:
+    branches: [main]
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build IPA
+        working-directory: ios
+        env:
+          RT_SERVER_URL: ${{ inputs.server_url || 'https://round-table.site' }}
+        run: bash scripts/build-ipa.sh
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: roundtable-ios
+          path: ios/build/*.ipa
+          if-no-files-found: error

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- roundtable app icon: the table mark on cream. iOS rounds the corners itself. -->
+  <rect width="1024" height="1024" fill="#f6eadb"/>
+  <g transform="translate(512 512) scale(7.4)">
+    <circle cx="0" cy="-40" r="7.5" fill="#f04e37"/>
+    <circle cx="34.64" cy="-20" r="7.5" fill="#fcc12d"/>
+    <circle cx="34.64" cy="20" r="7.5" fill="#13ad9f"/>
+    <circle cx="0" cy="40" r="7.5" fill="#f04e37"/>
+    <circle cx="-34.64" cy="20" r="7.5" fill="#fcc12d"/>
+    <circle cx="-34.64" cy="-20" r="7.5" fill="#13ad9f"/>
+    <circle r="24" fill="#a3693b" stroke="#6b4226" stroke-width="5"/>
+    <circle r="13" fill="none" stroke="#6b4226" stroke-opacity="0.35" stroke-width="1.5"/>
+  </g>
+</svg>

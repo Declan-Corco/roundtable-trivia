@@ -694,3 +694,6 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .streak-pill { font-weight: 600; font-size: 1.1rem; }
 .rank-text { font-weight: 600; font-size: 1.2rem; max-width: 420px; }
 .final-rank { font-size: clamp(4rem, 22vw, 7rem); font-weight: 650; line-height: 1; animation: pop-in 0.6s ease; }
+
+/* Inside the iOS app: fullscreen is not available in iPhone web views */
+.ios-app #fullscreen-btn { display: none; }
