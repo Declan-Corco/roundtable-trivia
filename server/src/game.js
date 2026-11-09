@@ -26,6 +26,7 @@ class Game {
     this.hostGraceTimer = null;
 
     this.players = new Map(); // playerId -> player
+    this.nextSeat = 1; // every player gets a seat number at the table, in join order
     this.state = 'lobby'; // lobby | intro | question | reveal | scoreboard | finished
     this.locked = false;
     this.qIndex = -1;
@@ -104,6 +105,7 @@ class Game {
       id: crypto.randomUUID(),
       token: newToken(),
       name,
+      seat: this.nextSeat++,
       score: 0,
       streak: 0,
       correctCount: 0,
@@ -187,7 +189,16 @@ class Game {
   }
 
   publicPlayers() {
-    return [...this.players.values()].map((p) => ({ id: p.id, name: p.name, connected: p.connected }));
+    return [...this.players.values()].map((p) => ({ id: p.id, name: p.name, seat: p.seat, connected: p.connected }));
+  }
+
+  /** Seats around the table for the host screen: who has answered (question) or what they chose (reveal). */
+  seatList(reveal = false) {
+    return [...this.players.values()].map((p) =>
+      reveal
+        ? { id: p.id, seat: p.seat, name: p.name, choice: p.answer ? p.answer.index : null }
+        : { id: p.id, seat: p.seat, name: p.name, answered: !!p.answer }
+    );
   }
 
   sendLobbyUpdate() {
@@ -254,7 +265,7 @@ class Game {
     player.answer = { index: i, ms: Date.now() - this.questionStartedAt };
     this.touch();
     this.toPlayer(player, 'player:state', { phase: 'answered', ...this.playerBase(player) });
-    this.toHost('host:answers', { answered: this.answeredCount(), playerCount: this.players.size });
+    this.toHost('host:answers', { answered: this.answeredCount(), playerCount: this.players.size, seats: this.seatList() });
     this.checkAllAnswered();
   }
 
@@ -305,6 +316,11 @@ class Game {
       p.lastPoints = points;
       p.lastResult = { answered: !!p.answer, correct, points, streak: p.streak };
     }
+
+    // Rank before this question, so the standings can show who moved up or down.
+    [...this.players.values()]
+      .sort((a, b) => b.score - b.lastPoints - (a.score - a.lastPoints) || a.name.localeCompare(b.name))
+      .forEach((p, i) => (p.prevRank = i + 1));
 
     const board = this.leaderboard();
     board.forEach((p, i) => {
@@ -397,6 +413,7 @@ class Game {
           timeLeft: this.timeLeft(),
           answered: this.answeredCount(),
           playerCount: this.players.size,
+          seats: this.seatList(),
         };
         break;
       case 'reveal':
@@ -409,22 +426,35 @@ class Game {
           correct: q.correct,
           counts: this.lastCounts,
           answered: this.lastCounts.reduce((a, b) => a + b, 0),
+          correctCount: q.correct.reduce((sum, i) => sum + (this.lastCounts[i] || 0), 0),
           playerCount: this.players.size,
           isLast: this.isLastQuestion,
+          seats: this.seatList(true),
         };
         break;
-      case 'scoreboard':
+      case 'scoreboard': {
+        const board = this.leaderboard();
         payload = {
           phase: 'scoreboard',
           ...common,
-          top: this.leaderboard().slice(0, 5).map((p) => ({ name: p.name, score: p.score, delta: p.lastPoints, streak: p.streak })),
+          maxScore: board[0]?.score || 0,
+          top: board.slice(0, 5).map((p, i) => ({
+            name: p.name,
+            seat: p.seat,
+            score: p.score,
+            delta: p.lastPoints,
+            streak: p.streak,
+            rank: i + 1,
+            prevRank: p.prevRank || i + 1,
+          })),
         };
         break;
+      }
       case 'finished':
         payload = {
           phase: 'finished',
           ...common,
-          podium: this.leaderboard().slice(0, 5).map((p) => ({ name: p.name, score: p.score, correct: p.correctCount })),
+          podium: this.leaderboard().slice(0, 5).map((p) => ({ name: p.name, seat: p.seat, score: p.score, correct: p.correctCount })),
           playerCount: this.players.size,
         };
         break;
@@ -433,7 +463,7 @@ class Game {
   }
 
   playerBase(p) {
-    return { pin: this.pin, name: p.name, score: p.score, index: this.qIndex, total: this.total };
+    return { pin: this.pin, name: p.name, seat: p.seat, score: p.score, index: this.qIndex, total: this.total };
   }
 
   sendPlayerState(p) {

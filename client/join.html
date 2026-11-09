@@ -31,10 +31,13 @@
 
   <!-- Lobby -->
   <section class="screen" id="screen-lobby" hidden>
-    <p class="big-title">You're in!</p>
-    <div class="big-name" id="lobby-name"></div>
-    <p class="muted">See your nickname on screen?<br>The game will start soon.</p>
-    <p class="muted" id="lobby-title"></p>
+    <span class="tagline">You've pulled up a chair</span>
+    <div class="place-card">
+      <span class="pc-seat" id="lobby-seat"></span>
+      <span class="pc-name" id="lobby-name"></span>
+      <span class="pc-title" id="lobby-title"></span>
+    </div>
+    <p class="muted">Find your seat at the table on the big screen.<br>The game starts soon.</p>
     <button class="btn btn-small" id="leave-btn" type="button">Leave game</button>
   </section>
 
@@ -50,16 +53,17 @@
   <section class="screen question-screen" id="screen-question" hidden>
     <div class="p-qhead">
       <span id="p-qcounter"></span>
-      <div class="p-timer" id="p-timer"></div>
+      <span class="p-timer" id="p-timer"></span>
     </div>
+    <div class="progress p-timebar"><div id="p-timebar"></div></div>
     <p class="p-qtext" id="p-qtext"></p>
-    <div class="answer-grid" id="p-answers"></div>
+    <div class="p-answers" id="p-answers"></div>
   </section>
 
   <!-- Waiting after answering -->
   <section class="screen" id="screen-answered" hidden>
-    <div id="answered-shape"></div>
-    <p class="big-title">Answer locked in!</p>
+    <p class="big-title">Locked in!</p>
+    <div class="p-answers single" id="answered-shape"></div>
     <div class="spinner"></div>
     <p class="muted">Waiting for everyone else…</p>
   </section>

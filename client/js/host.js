@@ -1,6 +1,9 @@
-// Host screen: create a lobby, show the QR code, run the game on a big screen.
+// Host screen: set the table, seat the guests, run the game on a big screen.
 (() => {
-  const { $, el, shape, showScreen, request, countdown, toast, watchConnection, storage, ordinal } = window.RT;
+  const {
+    $, el, showScreen, request, countdown, toast, watchConnection, storage, ordinal,
+    drainBar, drainRing, seatColor, renderSeats, answerCard,
+  } = window.RT;
   const SESSION_KEY = 'rt_host_session';
   const socket = io();
   watchConnection(socket);
@@ -33,7 +36,6 @@
   }
 
   function renderSets(sets) {
-    const list = $('#set-list');
     const cards = sets.map((s) =>
       el(
         'button',
@@ -51,18 +53,23 @@
 
     if (serverConfig.allowUploads) {
       const input = el('input', { type: 'file', accept: '.json,application/json', onchange: onUpload });
-      const label = el(
-        'label',
-        { className: 'set-card upload' + (selected?.type === 'upload' ? ' selected' : ''), id: 'upload-card' },
-        input,
-        el('strong', { id: 'upload-title' }, selected?.type === 'upload' ? selected.title : '⬆ Upload a trivia file'),
-        el('span', { className: 'desc', id: 'upload-desc' }, selected?.type === 'upload' ? `${selected.data.questions.length} questions · click to change` : '.json — see trivia/README.md')
+      cards.push(
+        el(
+          'label',
+          { className: 'set-card upload' + (selected?.type === 'upload' ? ' selected' : ''), id: 'upload-card' },
+          input,
+          el('strong', { id: 'upload-title' }, selected?.type === 'upload' ? selected.title : '⬆ Upload a trivia file'),
+          el(
+            'span',
+            { className: 'desc', id: 'upload-desc' },
+            selected?.type === 'upload' ? `${selected.data.questions.length} questions · click to change` : '.json — see trivia/README.md'
+          )
+        )
       );
-      cards.push(label);
     }
-    list.replaceChildren(...cards);
+    $('#set-list').replaceChildren(...cards);
     if (!selected && sets[0]) select({ type: 'server', id: sets[0].id });
-    updateCreateBtn();
+    $('#create-btn').disabled = !selected;
   }
 
   function select(choice) {
@@ -71,10 +78,6 @@
       const isUpload = c.id === 'upload-card';
       c.classList.toggle('selected', isUpload ? choice.type === 'upload' : choice.type === 'server' && c.dataset.id === choice.id);
     });
-    updateCreateBtn();
-  }
-
-  function updateCreateBtn() {
     $('#create-btn').disabled = !selected;
   }
 
@@ -130,13 +133,16 @@
 
   socket.on('host:state', render);
   socket.on('host:players', ({ players }) => {
-    if (current?.phase === 'lobby') renderPlayers(players);
-  });
-  socket.on('host:answers', ({ answered, playerCount }) => {
-    if (current?.phase === 'question') {
-      $('#q-answered').textContent = answered;
-      $('#q-answered-label').textContent = `of ${playerCount} answered`;
+    if (current?.phase === 'lobby') {
+      current.players = players;
+      renderGuests(players);
     }
+  });
+  socket.on('host:answers', ({ answered, playerCount, seats }) => {
+    if (current?.phase !== 'question') return;
+    current.seats = seats;
+    $('#q-answered-label').textContent = `${answered} of ${playerCount} in`;
+    renderAnswerSeats(seats);
   });
   socket.on('game:ended', ({ reason }) => {
     storage.remove(sessionStorage, SESSION_KEY);
@@ -169,11 +175,13 @@
       case 'reveal':
         return renderQuestion(state, true);
       case 'scoreboard':
-        return renderScoreboard(state);
+        return renderStandings(state);
       case 'finished':
         return renderFinal(state);
     }
   }
+
+  // ---- Lobby: the PIN sits on the table and guests take seats around it
 
   function renderLobby(s) {
     $('#join-url').textContent = s.joinUrl.replace(/^https?:\/\//, '').replace(/\/(join)?\?pin=\d+$/, '');
@@ -181,15 +189,22 @@
     $('#qr').src = s.qr;
     $('#lobby-title').textContent = s.title;
     $('#lock-btn').textContent = s.locked ? '🔒 Locked' : 'Lock';
-    renderPlayers(s.players);
     showScreen('screen-lobby');
+    renderGuests(s.players);
   }
 
-  function renderPlayers(players) {
+  function renderGuests(players) {
     $('#player-count').textContent = players.length;
     $('#start-btn').disabled = players.length === 0;
     $('#waiting-msg').hidden = players.length > 0;
     $('#kick-hint').hidden = players.length === 0;
+
+    renderSeats(
+      $('#lobby-seats'),
+      players.map((p) => ({ cls: `taken s-${seatColor(p.seat)}${p.connected ? '' : ' away'}`, label: p.seat, name: p.name, pop: true })),
+      8
+    );
+
     $('#player-list').replaceChildren(
       ...players.map((p) =>
         el(
@@ -206,6 +221,7 @@
                 if (!res.ok) toast(res.error);
               },
             },
+            el('span', { className: `seat-no s-${seatColor(p.seat)}` }, p.seat),
             p.name
           )
         )
@@ -213,102 +229,128 @@
     );
   }
 
+  // ---- Intro
+
   function renderIntro(s) {
     $('#intro-counter').textContent = `Question ${s.index + 1} of ${s.total}`;
     $('#intro-question').textContent = s.question;
     $('#intro-double').hidden = s.points !== 'double';
     showScreen('screen-intro');
-    RT.drainBar($('#intro-progress'), s.timeLeft, s.introMs);
+    drainBar($('#intro-progress'), s.timeLeft, s.introMs);
   }
 
+  // ---- Question & reveal: answers flank the table, seats show who's answered / what they chose
+
   function renderQuestion(s, reveal) {
+    const stage = $('#q-stage');
+    stage.classList.toggle('revealed', reveal);
+    $('#q-progress').textContent = `Question ${s.index + 1} of ${s.total}` + (s.points === 'double' ? ' · double points' : '');
     $('#q-text').textContent = s.question;
-    $('#q-progress').textContent = `${s.index + 1} / ${s.total}`;
-    $('#q-pin').textContent = `PIN ${s.pin}`;
-    $('#q-answered').textContent = s.answered;
-    $('#q-answered-label').textContent = `of ${s.playerCount} answered`;
+    $('#q-pin').textContent = `Join with PIN ${s.pin}`;
+    $('#q-media').replaceChildren(s.image ? el('img', { src: s.image, alt: '' }) : '');
 
-    // Answer tiles
-    $('#q-answers').replaceChildren(
-      ...s.answers.map((text, i) => {
-        const isCorrect = reveal && s.correct.includes(i);
-        return el(
-          'div',
-          { className: 'answer' + (reveal && !isCorrect ? ' dim' : ''), dataset: { i } },
-          shape(i),
-          el('span', {}, text),
-          isCorrect ? el('span', { className: 'check', 'aria-label': 'correct' }, '✓') : null
+    // Even-numbered answers sit on the left, odd on the right, all facing the table.
+    const left = [];
+    const right = [];
+    s.answers.forEach((text, i) => {
+      const card = answerCard(i, text);
+      if (reveal) {
+        const isCorrect = s.correct.includes(i);
+        const pct = s.playerCount ? Math.round((s.counts[i] / s.playerCount) * 100) : 0;
+        card.classList.toggle('dim', !isCorrect);
+        card.classList.toggle('right', isCorrect);
+        card.append(
+          el('span', { className: 'count' }, String(s.counts[i])),
+          el('span', { className: 'fill', style: `--pct:0%` })
         );
-      })
-    );
+        if (isCorrect) card.querySelector('.plate').append(el('span', { className: 'tick', 'aria-label': 'correct' }, '✓'));
+        requestAnimationFrame(() => requestAnimationFrame(() => card.querySelector('.fill').style.setProperty('--pct', pct + '%')));
+      }
+      (i % 2 === 0 ? left : right).push(card);
+    });
+    $('#q-left').replaceChildren(...left);
+    $('#q-right').replaceChildren(...right);
 
-    // Middle: image while answering, results chart on reveal
-    const media = $('#q-media');
-    if (reveal) {
-      media.replaceChildren(renderChart(s));
-    } else if (s.image) {
-      media.replaceChildren(el('img', { src: s.image, alt: '' }));
-    } else {
-      media.replaceChildren();
-    }
-
-    // Timer
+    const ring = $('#q-ring');
     const timer = $('#q-timer');
-    timer.style.visibility = reveal ? 'hidden' : 'visible';
-    timer.classList.remove('low');
-    if (!reveal) {
+    const table = $('#q-table');
+    table.classList.remove('low');
+    showScreen('screen-question');
+
+    if (reveal) {
+      ring.style.transition = 'none';
+      ring.style.strokeDashoffset = '0';
+      timer.textContent = '✓';
+      $('#q-answered-label').textContent = `${s.correctCount} of ${s.playerCount} got it`;
+      renderSeats(
+        $('#q-seats'),
+        s.seats.map((p) => ({ cls: p.choice == null ? 'none' : `c${p.choice}`, name: p.name, label: p.seat })),
+        8
+      );
+    } else {
+      $('#q-answered-label').textContent = `${s.answered} of ${s.playerCount} in`;
+      drainRing(ring, s.timeLeft, s.time * 1000);
       stopTimer = countdown(s.timeLeft, s.time * 1000, (sec) => {
         timer.textContent = sec;
-        timer.classList.toggle('low', sec <= 5 && sec > 0);
+        table.classList.toggle('low', sec <= 5 && sec > 0);
       });
+      renderAnswerSeats(s.seats);
     }
 
     const next = $('#q-next');
-    next.textContent = reveal ? (s.isLast ? 'Final results' : 'Next') : 'Skip';
+    next.textContent = reveal ? (s.isLast ? 'Final results' : 'Standings') : 'Skip';
     next.classList.toggle('btn-primary', reveal);
-    showScreen('screen-question');
   }
 
-  function renderChart(s) {
-    const max = Math.max(1, ...s.counts);
-    const chart = el('div', { className: 'chart' });
-    s.counts.forEach((count, i) => {
-      const correct = s.correct.includes(i);
-      const bar = el('div', { className: 'bar', style: 'height:0%' });
-      chart.append(
+  function renderAnswerSeats(seats) {
+    renderSeats(
+      $('#q-seats'),
+      seats.map((p) => ({ cls: p.answered ? `taken s-${seatColor(p.seat)} in` : 'waiting', name: p.name, label: p.seat })),
+      8
+    );
+  }
+
+  // ---- Standings: each player's bar races from their old score to their new one
+
+  function renderStandings(s) {
+    $('#score-progress').textContent = `after question ${s.index + 1} of ${s.total}`;
+    const max = Math.max(1, s.maxScore);
+    const rows = s.top.map((p, i) => {
+      const moved = s.index > 0 ? p.prevRank - p.rank : 0;
+      const fill = el('div', { className: `fill s-${seatColor(p.seat)}` });
+      fill.style.width = `${((p.score - p.delta) / max) * 100}%`;
+      requestAnimationFrame(() => requestAnimationFrame(() => (fill.style.width = `${(p.score / max) * 100}%`)));
+      return el(
+        'li',
+        { style: `animation-delay:${i * 0.08}s` },
+        el('span', { className: `seat-no big s-${seatColor(p.seat)}` }, p.rank),
         el(
           'div',
-          { className: 'bar-wrap' + (correct ? '' : ' dim'), dataset: { i } },
-          el('div', { className: 'bar-label' }, correct ? '✓' : '', String(count)),
-          bar
+          { className: 'race-main' },
+          el(
+            'div',
+            { className: 'race-name' },
+            el('span', { className: 'name' }, p.name),
+            moved > 0 ? el('span', { className: 'move up' }, `▲ ${moved}`) : null,
+            moved < 0 ? el('span', { className: 'move down' }, `▼ ${-moved}`) : null,
+            p.streak >= 2 ? el('span', { className: 'streak', title: 'Answer streak' }, `🔥 ${p.streak}`) : null
+          ),
+          el('div', { className: 'track' }, fill)
+        ),
+        el(
+          'div',
+          { className: 'race-score' },
+          el('span', { className: 'score' }, p.score.toLocaleString()),
+          p.delta ? el('span', { className: 'delta' }, `+${p.delta.toLocaleString()}`) : null
         )
-      );
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          bar.style.height = `${Math.max(3, (count / max) * 85)}%`;
-        })
       );
     });
-    return chart;
-  }
-
-  function renderScoreboard(s) {
-    $('#score-list').replaceChildren(
-      ...s.top.map((p, i) =>
-        el(
-          'li',
-          { style: `animation-delay:${i * 0.08}s` },
-          el('span', { className: 'rank' }, i + 1),
-          el('span', { className: 'name' }, p.name),
-          p.streak >= 2 ? el('span', { className: 'streak', title: 'Answer streak' }, `🔥${p.streak}`) : null,
-          p.delta ? el('span', { className: 'delta' }, `+${p.delta}`) : null,
-          el('span', {}, p.score.toLocaleString())
-        )
-      )
-    );
+    $('#score-list').replaceChildren(...rows);
     $('#score-next').textContent = `Next question (${s.index + 2}/${s.total})`;
     showScreen('screen-scoreboard');
   }
+
+  // ---- Final
 
   function renderFinal(s) {
     $('#final-title').textContent = s.title;
@@ -367,7 +409,7 @@
 
   // Space / → advances the game (handy with a presentation clicker).
   document.addEventListener('keydown', (e) => {
-    if (e.target.closest('input, textarea')) return;
+    if (e.target.closest('input, textarea, button')) return;
     if (e.key !== ' ' && e.key !== 'ArrowRight' && e.key !== 'PageDown') return;
     const btn = ['#start-btn', '#q-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
     if (btn) {

@@ -110,6 +110,62 @@
     bar.style.transform = 'scaleX(0)';
   }
 
+  /** Same as drainBar, for the SVG timer ring around the table (circle with pathLength="100"). */
+  function drainRing(circle, msLeft, totalMs) {
+    const start = totalMs ? Math.max(0, Math.min(1, msLeft / totalMs)) : 0;
+    circle.style.transition = 'none';
+    circle.style.strokeDashoffset = String(100 * (1 - start));
+    void circle.getBoundingClientRect();
+    circle.style.transition = `stroke-dashoffset ${Math.max(0, msLeft)}ms linear`;
+    circle.style.strokeDashoffset = '100';
+  }
+
+  // Seat colours go round the table like the logo: red, yellow, teal, red, …
+  const SEAT_COLORS = ['red', 'yellow', 'teal'];
+  const seatColor = (seat) => SEAT_COLORS[(Math.max(1, seat) - 1) % SEAT_COLORS.length];
+
+  /**
+   * Places seats evenly around a round table. `items` = [{ cls, label?, name? }]; empty slots are drawn
+   * up to `minSlots` so a new table never looks bare. Seats already on screen are updated in place,
+   * so only newly added seats animate in.
+   */
+  function renderSeats(container, items, minSlots = 0) {
+    container._seatArgs = [items, minSlots];
+    const slots = Math.max(minSlots, items.length);
+    const size = container.clientWidth || 400;
+    const radius = 0.47; // fraction of the table-wrap's width
+    const dot = Math.max(8, Math.min(40, ((2 * Math.PI * size * radius) / Math.max(slots, 1)) * 0.6));
+    const rebuild = container.children.length !== slots;
+    const nodes = rebuild ? [] : [...container.children];
+    for (let i = 0; i < slots; i++) {
+      const it = items[i];
+      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / slots;
+      const node = rebuild ? document.createElement('span') : nodes[i];
+      const wasEmpty = !rebuild && node.classList.contains('empty');
+      node.className = 'seat ' + (it ? it.cls : 'empty') + ((rebuild || wasEmpty) && it && it.pop ? ' pop' : '');
+      node.title = it?.name || '';
+      node.textContent = it && dot >= 26 && it.label != null ? String(it.label) : '';
+      node.style.cssText =
+        `left:${50 + radius * 100 * Math.cos(angle)}%;top:${50 + radius * 100 * Math.sin(angle)}%;` +
+        `width:${dot}px;height:${dot}px;font-size:${Math.round(dot * 0.42)}px`;
+      if (rebuild) nodes.push(node);
+    }
+    if (rebuild) container.replaceChildren(...nodes);
+  }
+  window.addEventListener('resize', () => {
+    document.querySelectorAll('.seats').forEach((c) => c._seatArgs && renderSeats(c, ...c._seatArgs));
+  });
+
+  /** An answer card: a coloured place setting with the shape on a plate, then the answer text. */
+  function answerCard(i, text, tag = 'div', props = {}) {
+    return el(
+      tag,
+      { className: 'answer', dataset: { i }, ...props },
+      el('span', { className: 'plate' }, shape(i)),
+      el('span', { className: 'label' }, text)
+    );
+  }
+
   let toastTimer;
   function toast(message, ms = 3000) {
     let node = $('.toast');
@@ -157,5 +213,5 @@
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   };
 
-  window.RT = { $, el, shape, showScreen, request, countdown, toast, watchConnection, storage, ordinal, SHAPE_NAMES, MARK_SVG, drainBar };
+  window.RT = { $, el, shape, showScreen, request, countdown, toast, watchConnection, storage, ordinal, SHAPE_NAMES, MARK_SVG, drainBar, drainRing, seatColor, renderSeats, answerCard };
 })();

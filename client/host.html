@@ -21,40 +21,52 @@
   <!-- 1. Pick a trivia set -->
   <section class="screen" id="screen-setup">
     <div class="setup">
-      <h1>Host a game</h1>
+      <h1>Set the table</h1>
       <p class="muted">Pick a trivia set, or upload your own <code>.json</code> file.</p>
       <div class="set-grid" id="set-list"></div>
       <div class="set-errors" id="set-errors"></div>
       <div class="setup-actions">
         <input class="input" type="password" id="host-password" placeholder="Host password" autocomplete="current-password" hidden>
-        <button class="btn btn-primary btn-big" id="create-btn" type="button" disabled>Create lobby</button>
+        <button class="btn btn-primary btn-big" id="create-btn" type="button" disabled>Open the lobby</button>
       </div>
       <p class="error" id="setup-error"></p>
     </div>
   </section>
 
-  <!-- 2. Lobby -->
-  <section class="screen" id="screen-lobby" hidden>
+  <!-- 2. Lobby: the table fills up as guests join -->
+  <section class="screen lobby-screen" id="screen-lobby" hidden>
     <div class="lobby">
-      <div class="lobby-top">
-        <div class="join-box">
-          <div class="join-line">Go to <span class="join-url" id="join-url"></span> and tap <strong>Join</strong></div>
-          <div class="pin-label">Game PIN:</div>
-          <div class="pin" id="lobby-pin"></div>
+      <div class="lobby-stage">
+        <div class="table-wrap" id="lobby-table">
+          <div class="seats" id="lobby-seats"></div>
+          <div class="tabletop">
+            <span class="tt-label">Game PIN</span>
+            <span class="tt-pin" id="lobby-pin"></span>
+            <span class="tt-sub" id="lobby-title"></span>
+          </div>
         </div>
-        <div class="qr-box"><img id="qr" alt="QR code to join the game"></div>
       </div>
-      <div class="lobby-bar">
-        <div class="player-count"><span id="player-count">0</span> players</div>
-        <h2 id="lobby-title"></h2>
+      <aside class="lobby-side">
+        <div class="join-card">
+          <img id="qr" alt="QR code to join the game">
+          <div class="join-text">
+            <span class="muted">Scan the code, or go to</span>
+            <span class="join-url" id="join-url"></span>
+            <span class="muted">and tap <strong>Join</strong></span>
+          </div>
+        </div>
+        <div class="guest-head">
+          <h2>Guest list</h2>
+          <span class="player-count"><span id="player-count">0</span> seated</span>
+        </div>
+        <ul class="guest-list" id="player-list"></ul>
+        <p class="waiting" id="waiting-msg">Waiting for the first guest…</p>
+        <p class="hint" id="kick-hint" hidden>Click a name to remove that player.</p>
         <div class="controls">
           <button class="btn" id="lock-btn" type="button">Lock</button>
-          <button class="btn btn-primary btn-big" id="start-btn" type="button" disabled>Start</button>
+          <button class="btn btn-primary btn-big" id="start-btn" type="button" disabled>Start the game</button>
         </div>
-      </div>
-      <ul class="player-chips" id="player-list"></ul>
-      <div class="waiting" id="waiting-msg"><div class="spinner"></div>Waiting for players…</div>
-      <p class="muted" id="kick-hint" hidden>Click a name to remove that player.</p>
+      </aside>
     </div>
   </section>
 
@@ -66,27 +78,42 @@
     <div class="progress"><div id="intro-progress"></div></div>
   </section>
 
-  <!-- 4. Question + 5. Reveal (same screen) -->
+  <!-- 4. Question + 5. Reveal: answers sit on either side of the table -->
   <section class="screen question-screen" id="screen-question" hidden>
-    <h1 class="q-head" id="q-text"></h1>
-    <div class="q-mid">
-      <div class="timer" id="q-timer">20</div>
+    <div class="q-top">
+      <span class="q-counter" id="q-progress"></span>
+      <h1 class="q-text" id="q-text"></h1>
       <div class="q-media" id="q-media"></div>
-      <div class="answered-box"><span class="n" id="q-answered">0</span><small id="q-answered-label">Answers</small></div>
     </div>
-    <div class="answer-grid" id="q-answers"></div>
+    <div class="q-stage" id="q-stage">
+      <div class="q-col q-left" id="q-left"></div>
+      <div class="table-wrap q-table" id="q-table">
+        <div class="seats" id="q-seats"></div>
+        <svg class="ring" viewBox="0 0 200 200" aria-hidden="true">
+          <circle class="ring-track" cx="100" cy="100" r="90" pathLength="100"/>
+          <circle class="ring-fill" id="q-ring" cx="100" cy="100" r="90" pathLength="100"/>
+        </svg>
+        <div class="tabletop">
+          <span class="tt-big" id="q-timer"></span>
+          <span class="tt-sub" id="q-answered-label"></span>
+        </div>
+      </div>
+      <div class="q-col q-right" id="q-right"></div>
+    </div>
     <div class="q-foot">
-      <span id="q-progress"></span>
       <span id="q-pin"></span>
-      <button class="btn btn-primary" id="q-next" type="button">Skip</button>
+      <button class="btn" id="q-next" type="button">Skip</button>
     </div>
   </section>
 
-  <!-- 6. Scoreboard -->
+  <!-- 6. Standings: a race chart from old score to new -->
   <section class="screen" id="screen-scoreboard" hidden>
-    <div class="scoreboard">
-      <h1>Scoreboard</h1>
-      <ol class="score-list" id="score-list"></ol>
+    <div class="standings">
+      <div class="standings-head">
+        <h1>Standings</h1>
+        <span class="muted" id="score-progress"></span>
+      </div>
+      <ol class="race" id="score-list"></ol>
     </div>
     <button class="btn btn-primary btn-big" id="score-next" type="button">Next question</button>
   </section>
@@ -94,6 +121,7 @@
   <!-- 7. Podium -->
   <section class="screen" id="screen-final" hidden>
     <div class="final">
+      <span class="tagline">Head of the table</span>
       <h1 id="final-title"></h1>
     </div>
     <div class="podium" id="podium"></div>

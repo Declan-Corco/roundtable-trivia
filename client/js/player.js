@@ -95,6 +95,8 @@
 
     switch (s.phase) {
       case 'lobby':
+        $('#lobby-seat').textContent = `Seat ${s.seat}`;
+        $('#lobby-seat').className = `pc-seat s-${RT.seatColor(s.seat)}`;
         $('#lobby-name').textContent = s.name;
         $('#lobby-title').textContent = s.title;
         return showScreen('screen-lobby');
@@ -111,11 +113,7 @@
         return renderQuestion(s);
 
       case 'answered': {
-        const holder = $('#answered-shape');
-        holder.replaceChildren();
-        if (lastChoice != null) {
-          holder.append(el('div', { className: 'answer', dataset: { i: lastChoice }, style: 'padding:18px;font-size:2.4rem' }, shape(lastChoice)));
-        }
+        $('#answered-shape').replaceChildren(lastChoice ? RT.answerCard(lastChoice.i, lastChoice.text) : '');
         return showScreen('screen-answered');
       }
 
@@ -141,32 +139,29 @@
     lastChoice = null;
     $('#p-qcounter').textContent = `${s.index + 1} of ${s.total}`;
     $('#p-qtext').textContent = s.question;
-    const grid = $('#p-answers');
-    grid.className = `answer-grid count-${s.answers.length}`;
-    grid.replaceChildren(
+    const list = $('#p-answers');
+    list.className = `p-answers count-${s.answers.length}`;
+    list.replaceChildren(
       ...s.answers.map((text, i) =>
-        el(
-          'button',
-          { type: 'button', className: 'answer', dataset: { i }, 'aria-label': `${RT.SHAPE_NAMES[i]}: ${text}`, onclick: () => answer(i) },
-          shape(i),
-          el('span', {}, text)
-        )
+        RT.answerCard(i, text, 'button', { type: 'button', 'aria-label': `${RT.SHAPE_NAMES[i]}: ${text}`, onclick: () => answer(i, text) })
       )
     );
     const timer = $('#p-timer');
-    stopTimer = countdown(s.timeLeft, s.time * 1000, (sec) => {
-      timer.textContent = sec;
-      timer.classList.toggle('low', sec <= 5);
-    });
+    const bar = $('#p-timebar');
     showScreen('screen-question');
+    RT.drainBar(bar, s.timeLeft, s.time * 1000);
+    stopTimer = countdown(s.timeLeft, s.time * 1000, (sec) => {
+      timer.textContent = `${sec}s`;
+      bar.parentElement.classList.toggle('low', sec <= 5);
+    });
   }
 
-  async function answer(i) {
+  async function answer(i, text) {
     const grid = $('#p-answers');
     if (grid.classList.contains('locked')) return;
     grid.classList.add('locked');
     grid.children[i]?.classList.add('chosen');
-    lastChoice = i;
+    lastChoice = { i, text };
     navigator.vibrate?.(30);
     const res = await request(socket, 'player:answer', { index: i });
     if (!res.ok) {
