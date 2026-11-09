@@ -1,0 +1,29 @@
+// All settings can be overridden with environment variables.
+// On Linux installs these live in /etc/roundtable.env (created by setup.sh).
+const path = require('path');
+
+function int(name, fallback) {
+  const n = parseInt(process.env[name], 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+module.exports = {
+  // Port the web server listens on.
+  PORT: int('PORT', 3000),
+  // Interface to bind. 0.0.0.0 = reachable from other devices on your network.
+  HOST: process.env.HOST || '0.0.0.0',
+  // Public address used in the QR code / join link, e.g. https://trivia.example.com
+  // Leave empty to auto-detect from the address the host screen was opened with.
+  PUBLIC_URL: (process.env.PUBLIC_URL || '').trim().replace(/\/+$/, ''),
+  // Folder containing trivia set .json files (re-scanned every time the host screen loads).
+  TRIVIA_DIR: process.env.TRIVIA_DIR || path.join(__dirname, '..', 'trivia'),
+  // Folder containing the website frontend.
+  CLIENT_DIR: process.env.CLIENT_DIR || path.join(__dirname, '..', '..', 'client'),
+  // Allow hosts to upload a trivia .json file from their own computer.
+  ALLOW_UPLOADS: process.env.ALLOW_UPLOADS !== 'false',
+  // If set, the host screen asks for this password before creating a game.
+  // Recommended when the site is public on the internet.
+  HOST_PASSWORD: process.env.HOST_PASSWORD || '',
+  MAX_PLAYERS: int('MAX_PLAYERS', 200),
+  MAX_GAMES: int('MAX_GAMES', 50),
+};

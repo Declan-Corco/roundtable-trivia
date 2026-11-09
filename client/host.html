@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1524">
+  <title>Host · Roundtable Trivia</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="host">
+  <header class="topbar">
+    <span class="logo"><span class="logo-mark"></span>Roundtable</span>
+    <div class="actions">
+      <button class="btn btn-small btn-ghost" id="fullscreen-btn" type="button">Fullscreen</button>
+      <button class="btn btn-small btn-ghost" id="end-btn" type="button" hidden>End game</button>
+    </div>
+  </header>
+
+  <!-- 1. Pick a trivia set -->
+  <section class="screen" id="screen-setup">
+    <div class="setup">
+      <h1>Host a game</h1>
+      <p class="muted">Pick a trivia set, or upload your own <code>.json</code> file.</p>
+      <div class="set-grid" id="set-list"></div>
+      <div class="set-errors" id="set-errors"></div>
+      <div class="setup-actions">
+        <input class="input" type="password" id="host-password" placeholder="Host password" autocomplete="current-password" hidden>
+        <button class="btn btn-primary btn-big" id="create-btn" type="button" disabled>Create lobby</button>
+      </div>
+      <p class="error" id="setup-error"></p>
+    </div>
+  </section>
+
+  <!-- 2. Lobby -->
+  <section class="screen" id="screen-lobby" hidden>
+    <div class="lobby">
+      <div class="lobby-top">
+        <div class="join-box">
+          <div>Join at <span class="join-url" id="join-url"></span></div>
+          <div class="pin-label">Game PIN:</div>
+          <div class="pin" id="lobby-pin"></div>
+        </div>
+        <div class="qr-box"><img id="qr" alt="QR code to join the game"></div>
+      </div>
+      <div class="lobby-bar">
+        <div class="player-count"><span id="player-count">0</span> players</div>
+        <h2 id="lobby-title"></h2>
+        <div class="controls">
+          <button class="btn" id="lock-btn" type="button">Lock</button>
+          <button class="btn btn-primary btn-big" id="start-btn" type="button" disabled>Start</button>
+        </div>
+      </div>
+      <ul class="player-chips" id="player-list"></ul>
+      <p class="waiting" id="waiting-msg">Waiting for players…</p>
+      <p class="muted" id="kick-hint" hidden>Click a name to remove that player.</p>
+    </div>
+  </section>
+
+  <!-- 3. "Get ready" intro -->
+  <section class="screen intro" id="screen-intro" hidden>
+    <div class="q-counter" id="intro-counter"></div>
+    <span class="badge-double" id="intro-double" hidden>Double points!</span>
+    <h1 id="intro-question"></h1>
+    <div class="progress"><div id="intro-progress"></div></div>
+  </section>
+
+  <!-- 4. Question + 5. Reveal (same screen) -->
+  <section class="screen question-screen" id="screen-question" hidden>
+    <h1 class="q-head" id="q-text"></h1>
+    <div class="q-mid">
+      <div class="timer" id="q-timer">20</div>
+      <div class="q-media" id="q-media"></div>
+      <div class="answered-box"><span class="n" id="q-answered">0</span><small id="q-answered-label">Answers</small></div>
+    </div>
+    <div class="answer-grid" id="q-answers"></div>
+    <div class="q-foot">
+      <span id="q-progress"></span>
+      <span id="q-pin"></span>
+      <button class="btn btn-primary" id="q-next" type="button">Skip</button>
+    </div>
+  </section>
+
+  <!-- 6. Scoreboard -->
+  <section class="screen" id="screen-scoreboard" hidden>
+    <div class="scoreboard">
+      <h1>Scoreboard</h1>
+      <ol class="score-list" id="score-list"></ol>
+    </div>
+    <button class="btn btn-primary btn-big" id="score-next" type="button">Next question</button>
+  </section>
+
+  <!-- 7. Podium -->
+  <section class="screen" id="screen-final" hidden>
+    <div class="final">
+      <h1 id="final-title"></h1>
+    </div>
+    <div class="podium" id="podium"></div>
+    <p class="runners-up" id="runners-up"></p>
+    <button class="btn btn-primary btn-big" id="new-game-btn" type="button">New game</button>
+  </section>
+
+  <!-- Game ended / error -->
+  <section class="screen" id="screen-ended" hidden>
+    <h1 class="big-title" id="ended-msg">Game over</h1>
+    <button class="btn btn-primary btn-big" id="ended-btn" type="button">Host a new game</button>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/host.js"></script>
+</body>
+</html>
