@@ -260,8 +260,12 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
   place-items: center;
   font-weight: 650;
   color: var(--tile-ink);
-  transition: background-color 0.35s, border-color 0.35s, opacity 0.35s;
+  /* When the table grows, seats glide round to their new places */
+  transition: left 0.6s cubic-bezier(.3, .8, .3, 1), top 0.6s cubic-bezier(.3, .8, .3, 1),
+    width 0.4s, height 0.4s, background-color 0.35s, border-color 0.35s, opacity 0.35s;
 }
+.seat.appear { animation: seat-appear 0.5s ease both; }
+@keyframes seat-appear { from { opacity: 0; transform: translate(-50%, -50%) scale(0.4); } }
 .seat.empty { border: 2px dashed var(--cream-deep); }
 .seat.waiting { background: var(--cream); border: 2px solid var(--cream-deep); color: transparent; }
 .seat.taken { box-shadow: 0 3px 0 rgba(74, 44, 29, 0.22); }

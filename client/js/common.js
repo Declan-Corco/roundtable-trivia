@@ -125,32 +125,47 @@
   const seatColor = (seat) => SEAT_COLORS[(Math.max(1, seat) - 1) % SEAT_COLORS.length];
 
   /**
-   * Places seats evenly around a round table. `items` = [{ cls, label?, name? }]; empty slots are drawn
-   * up to `minSlots` so a new table never looks bare. Seats already on screen are updated in place,
-   * so only newly added seats animate in.
+   * Draws the seats around a round table. Seat N always sits in position N (clockwise from the top),
+   * so a seat freed by a leaver stays visible as an empty spot until someone takes it.
+   * `items` = [{ id, seat, cls, label?, name?, pop? }]; `tableSize` = how many seats to draw
+   * (the server grows it when the table fills). Seat nodes are reused, so when the table grows the
+   * existing seats glide round to their new spots and only new arrivals pop in.
    */
-  function renderSeats(container, items, minSlots = 0) {
-    container._seatArgs = [items, minSlots];
-    const slots = Math.max(minSlots, items.length);
+  function renderSeats(container, items, tableSize = 8) {
+    container._seatArgs = [items, tableSize];
+    const slots = Math.max(tableSize, ...items.map((it) => it.seat || 0), 1);
+    const bySeat = new Map(items.map((it) => [it.seat, it]));
     const size = container.clientWidth || 400;
     const radius = 0.47; // fraction of the table-wrap's width
-    const dot = Math.max(8, Math.min(40, ((2 * Math.PI * size * radius) / Math.max(slots, 1)) * 0.6));
-    const rebuild = container.children.length !== slots;
-    const nodes = rebuild ? [] : [...container.children];
-    for (let i = 0; i < slots; i++) {
-      const it = items[i];
-      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / slots;
-      const node = rebuild ? document.createElement('span') : nodes[i];
-      const wasEmpty = !rebuild && node.classList.contains('empty');
-      node.className = 'seat ' + (it ? it.cls : 'empty') + ((rebuild || wasEmpty) && it && it.pop ? ' pop' : '');
+    const dot = Math.max(8, Math.min(40, ((2 * Math.PI * size * radius) / slots) * 0.6));
+
+    // Add or remove seat nodes to match the table size; existing nodes keep their identity.
+    while (container.children.length < slots) {
+      const node = document.createElement('span');
+      node.className = 'seat empty appear';
+      container.append(node);
+    }
+    while (container.children.length > slots) container.lastElementChild.remove();
+
+    const before = container._occupants || new Map(); // seat -> occupant id last time
+    const now = new Map();
+    [...container.children].forEach((node, i) => {
+      const seat = i + 1;
+      const it = bySeat.get(seat);
+      const isNew = Boolean(it && it.pop && before.get(seat) !== it.id);
+      if (it) now.set(seat, it.id);
+      const appearing = node.classList.contains('appear') && !node.dataset.placed;
+      node.className = 'seat ' + (it ? it.cls : 'empty') + (isNew ? ' pop' : '') + (appearing ? ' appear' : '');
+      node.dataset.placed = '1';
       node.title = it?.name || '';
       node.textContent = it && dot >= 26 && it.label != null ? String(it.label) : '';
-      node.style.cssText =
-        `left:${50 + radius * 100 * Math.cos(angle)}%;top:${50 + radius * 100 * Math.sin(angle)}%;` +
-        `width:${dot}px;height:${dot}px;font-size:${Math.round(dot * 0.42)}px`;
-      if (rebuild) nodes.push(node);
-    }
-    if (rebuild) container.replaceChildren(...nodes);
+      const angle = -Math.PI / 2 + ((seat - 1) * 2 * Math.PI) / slots;
+      node.style.left = `${50 + radius * 100 * Math.cos(angle)}%`;
+      node.style.top = `${50 + radius * 100 * Math.sin(angle)}%`;
+      node.style.width = node.style.height = `${dot}px`;
+      node.style.fontSize = `${Math.round(dot * 0.42)}px`;
+    });
+    container._occupants = now;
   }
   window.addEventListener('resize', () => {
     document.querySelectorAll('.seats').forEach((c) => c._seatArgs && renderSeats(c, ...c._seatArgs));

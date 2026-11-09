@@ -132,17 +132,17 @@
   });
 
   socket.on('host:state', render);
-  socket.on('host:players', ({ players }) => {
+  socket.on('host:players', ({ players, tableSize }) => {
     if (current?.phase === 'lobby') {
-      current.players = players;
-      renderGuests(players);
+      Object.assign(current, { players, tableSize });
+      renderGuests(players, tableSize);
     }
   });
-  socket.on('host:answers', ({ answered, playerCount, seats }) => {
+  socket.on('host:answers', ({ answered, playerCount, seats, tableSize }) => {
     if (current?.phase !== 'question') return;
-    current.seats = seats;
+    Object.assign(current, { seats, tableSize });
     $('#q-answered-label').textContent = `${answered} of ${playerCount} in`;
-    renderAnswerSeats(seats);
+    renderAnswerSeats(seats, tableSize);
   });
   socket.on('game:ended', ({ reason }) => {
     storage.remove(sessionStorage, SESSION_KEY);
@@ -190,10 +190,10 @@
     $('#lobby-title').textContent = s.title;
     $('#lock-btn').textContent = s.locked ? '🔒 Locked' : 'Lock';
     showScreen('screen-lobby');
-    renderGuests(s.players);
+    renderGuests(s.players, s.tableSize);
   }
 
-  function renderGuests(players) {
+  function renderGuests(players, tableSize) {
     $('#player-count').textContent = players.length;
     $('#start-btn').disabled = players.length === 0;
     $('#waiting-msg').hidden = players.length > 0;
@@ -201,8 +201,15 @@
 
     renderSeats(
       $('#lobby-seats'),
-      players.map((p) => ({ cls: `taken s-${seatColor(p.seat)}${p.connected ? '' : ' away'}`, label: p.seat, name: p.name, pop: true })),
-      8
+      players.map((p) => ({
+        id: p.id,
+        seat: p.seat,
+        cls: `taken s-${seatColor(p.seat)}${p.connected ? '' : ' away'}`,
+        label: p.seat,
+        name: p.name,
+        pop: true,
+      })),
+      tableSize
     );
 
     $('#player-list').replaceChildren(
@@ -284,8 +291,8 @@
       $('#q-answered-label').textContent = `${s.correctCount} of ${s.playerCount} got it`;
       renderSeats(
         $('#q-seats'),
-        s.seats.map((p) => ({ cls: p.choice == null ? 'none' : `c${p.choice}`, name: p.name, label: p.seat })),
-        8
+        s.seats.map((p) => ({ id: p.id, seat: p.seat, cls: p.choice == null ? 'none' : `c${p.choice}`, name: p.name, label: p.seat })),
+        s.tableSize
       );
     } else {
       $('#q-answered-label').textContent = `${s.answered} of ${s.playerCount} in`;
@@ -294,7 +301,7 @@
         timer.textContent = sec;
         table.classList.toggle('low', sec <= 5 && sec > 0);
       });
-      renderAnswerSeats(s.seats);
+      renderAnswerSeats(s.seats, s.tableSize);
     }
 
     const next = $('#q-next');
@@ -302,11 +309,11 @@
     next.classList.toggle('btn-primary', reveal);
   }
 
-  function renderAnswerSeats(seats) {
+  function renderAnswerSeats(seats, tableSize) {
     renderSeats(
       $('#q-seats'),
-      seats.map((p) => ({ cls: p.answered ? `taken s-${seatColor(p.seat)} in` : 'waiting', name: p.name, label: p.seat })),
-      8
+      seats.map((p) => ({ id: p.id, seat: p.seat, cls: p.answered ? `taken s-${seatColor(p.seat)} in` : 'waiting', name: p.name, label: p.seat })),
+      tableSize
     );
   }
 

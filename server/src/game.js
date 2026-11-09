@@ -7,6 +7,8 @@ const HOST_GRACE_MS = 2 * 60 * 1000; // host can refresh/reconnect within this w
 const LOBBY_DROP_MS = 60 * 1000; // disconnected players are removed from the lobby after this
 const FINISHED_TTL_MS = 15 * 60 * 1000; // finished games are cleaned up after this
 const MAX_STREAK_BONUS = 500;
+const TABLE_MIN_SEATS = 8; // seats drawn around an empty table
+const TABLE_GROW_BY = 4; // seats added each time the table fills up
 const RECONNECT_GRACE_MS = 15 * 1000; // a question won't end early while a player is reconnecting
 
 const newToken = () => crypto.randomBytes(18).toString('base64url');
@@ -26,7 +28,6 @@ class Game {
     this.hostGraceTimer = null;
 
     this.players = new Map(); // playerId -> player
-    this.nextSeat = 1; // every player gets a seat number at the table, in join order
     this.state = 'lobby'; // lobby | intro | question | reveal | scoreboard | finished
     this.locked = false;
     this.qIndex = -1;
@@ -105,7 +106,7 @@ class Game {
       id: crypto.randomUUID(),
       token: newToken(),
       name,
-      seat: this.nextSeat++,
+      seat: this.freeSeat(), // the lowest empty seat, so leavers' seats get reused
       score: 0,
       streak: 0,
       correctCount: 0,
@@ -188,13 +189,35 @@ class Game {
     if (player.connected && player.socketId) this.io.to(player.socketId).emit(event, payload);
   }
 
+  /** Players in seat order. */
+  seated() {
+    return [...this.players.values()].sort((a, b) => a.seat - b.seat);
+  }
+
+  /** The lowest seat number nobody is sitting in, so seats freed by leavers get reused. */
+  freeSeat() {
+    const taken = new Set([...this.players.values()].map((p) => p.seat));
+    let seat = 1;
+    while (taken.has(seat)) seat++;
+    return seat;
+  }
+
+  /**
+   * How many seats to draw around the table: 8 to start, growing 4 at a time so there's always
+   * at least one free seat beyond the highest one taken.
+   */
+  tableSize() {
+    const highest = Math.max(0, ...[...this.players.values()].map((p) => p.seat));
+    return Math.max(TABLE_MIN_SEATS, Math.ceil((highest + 1) / TABLE_GROW_BY) * TABLE_GROW_BY);
+  }
+
   publicPlayers() {
-    return [...this.players.values()].map((p) => ({ id: p.id, name: p.name, seat: p.seat, connected: p.connected }));
+    return this.seated().map((p) => ({ id: p.id, name: p.name, seat: p.seat, connected: p.connected }));
   }
 
   /** Seats around the table for the host screen: who has answered (question) or what they chose (reveal). */
   seatList(reveal = false) {
-    return [...this.players.values()].map((p) =>
+    return this.seated().map((p) =>
       reveal
         ? { id: p.id, seat: p.seat, name: p.name, choice: p.answer ? p.answer.index : null }
         : { id: p.id, seat: p.seat, name: p.name, answered: !!p.answer }
@@ -202,7 +225,7 @@ class Game {
   }
 
   sendLobbyUpdate() {
-    this.toHost('host:players', { players: this.publicPlayers() });
+    this.toHost('host:players', { players: this.publicPlayers(), tableSize: this.tableSize() });
   }
 
   leaderboard() {
@@ -265,7 +288,12 @@ class Game {
     player.answer = { index: i, ms: Date.now() - this.questionStartedAt };
     this.touch();
     this.toPlayer(player, 'player:state', { phase: 'answered', ...this.playerBase(player) });
-    this.toHost('host:answers', { answered: this.answeredCount(), playerCount: this.players.size, seats: this.seatList() });
+    this.toHost('host:answers', {
+      answered: this.answeredCount(),
+      playerCount: this.players.size,
+      seats: this.seatList(),
+      tableSize: this.tableSize(),
+    });
     this.checkAllAnswered();
   }
 
@@ -396,6 +424,7 @@ class Game {
           qr: this.qr,
           locked: this.locked,
           players: this.publicPlayers(),
+          tableSize: this.tableSize(),
         };
         break;
       case 'intro':
@@ -414,6 +443,7 @@ class Game {
           answered: this.answeredCount(),
           playerCount: this.players.size,
           seats: this.seatList(),
+          tableSize: this.tableSize(),
         };
         break;
       case 'reveal':
@@ -430,6 +460,7 @@ class Game {
           playerCount: this.players.size,
           isLast: this.isLastQuestion,
           seats: this.seatList(true),
+          tableSize: this.tableSize(),
         };
         break;
       case 'scoreboard': {
