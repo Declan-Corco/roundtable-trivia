@@ -102,9 +102,9 @@
       case 'intro': {
         $('#intro-counter').textContent = `Question ${s.index + 1} of ${s.total}`;
         $('#intro-double').hidden = s.points !== 'double';
-        const bar = $('#intro-progress');
-        stopTimer = countdown(s.timeLeft, 4000, (_sec, frac) => (bar.style.transform = `scaleX(${frac})`));
-        return showScreen('screen-intro');
+        showScreen('screen-intro');
+        RT.drainBar($('#intro-progress'), s.timeLeft, 4000);
+        return;
       }
 
       case 'question':

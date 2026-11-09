@@ -23,11 +23,13 @@
   --teal: #13ad9f;
   --yellow: #fcc12d;
 
-  /* Answer tiles (index 0-3) and the text on them */
-  --a0: #ee4b35; --a0-ink: #fffdf9; --a0-edge: #c63521;
-  --a1: #11a495; --a1-ink: #fffdf9; --a1-edge: #0b7f73;
-  --a2: #fcc12d; --a2-ink: #4a2c1d; --a2-edge: #d99a0b;
-  --a3: #9c6236; --a3-ink: #fffdf9; --a3-edge: #774824;
+  /* Answer tiles (index 0-3). One text colour for all four: this dark brown has at least
+     4.5:1 contrast on every tile colour (red 4.5, teal 5.4, yellow 10.2, wood 4.7). */
+  --tile-ink: #2b1a10;
+  --a0: #ee4b35; --a0-ink: var(--tile-ink); --a0-edge: #c63521;
+  --a1: #11a495; --a1-ink: var(--tile-ink); --a1-edge: #0b7f73;
+  --a2: #fcc12d; --a2-ink: var(--tile-ink); --a2-edge: #d99a0b;
+  --a3: #b97a45; --a3-ink: var(--tile-ink); --a3-edge: #8f5a2f;
 
   --good: #11a495;
   --bad: #ee4b35;

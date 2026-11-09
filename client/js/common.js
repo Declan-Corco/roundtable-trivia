@@ -97,6 +97,19 @@
     };
   }
 
+  /**
+   * Drains a progress bar smoothly from its current fill to empty over `msLeft` milliseconds.
+   * Uses a CSS transition (runs on the GPU at the screen's refresh rate) instead of stepped updates.
+   */
+  function drainBar(bar, msLeft, totalMs) {
+    const start = totalMs ? Math.max(0, Math.min(1, msLeft / totalMs)) : 0;
+    bar.style.transition = 'none';
+    bar.style.transform = `scaleX(${start})`;
+    void bar.offsetWidth; // commit the start position before animating
+    bar.style.transition = `transform ${Math.max(0, msLeft)}ms linear`;
+    bar.style.transform = 'scaleX(0)';
+  }
+
   let toastTimer;
   function toast(message, ms = 3000) {
     let node = $('.toast');
@@ -144,5 +157,5 @@
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   };
 
-  window.RT = { $, el, shape, showScreen, request, countdown, toast, watchConnection, storage, ordinal, SHAPE_NAMES, MARK_SVG };
+  window.RT = { $, el, shape, showScreen, request, countdown, toast, watchConnection, storage, ordinal, SHAPE_NAMES, MARK_SVG, drainBar };
 })();

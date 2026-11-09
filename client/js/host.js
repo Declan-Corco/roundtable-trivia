@@ -217,11 +217,8 @@
     $('#intro-counter').textContent = `Question ${s.index + 1} of ${s.total}`;
     $('#intro-question').textContent = s.question;
     $('#intro-double').hidden = s.points !== 'double';
-    const bar = $('#intro-progress');
-    stopTimer = countdown(s.timeLeft, s.introMs, (_sec, frac) => {
-      bar.style.transform = `scaleX(${frac})`;
-    });
     showScreen('screen-intro');
+    RT.drainBar($('#intro-progress'), s.timeLeft, s.introMs);
   }
 
   function renderQuestion(s, reveal) {
