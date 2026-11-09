@@ -1,4 +1,5 @@
 // Roundtable Trivia server: serves the website (../client) and runs the games over Socket.IO.
+const fs = require('fs');
 const http = require('http');
 const os = require('os');
 const path = require('path');
@@ -27,7 +28,43 @@ const games = new Map();
 
 // ------------------------------------------------------------------ HTTP
 
-app.use(express.static(config.CLIENT_DIR, { extensions: ['html'] }));
+// Pages are served with a version tag (a hash of the client files) on their CSS/JS links, so
+// after an update every browser and Cloudflare fetch the new files instead of stale cached ones.
+function hashDir(dir) {
+  const hash = crypto.createHash('sha1');
+  const walk = (d) => {
+    const entries = fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else hash.update(e.name).update(fs.readFileSync(p));
+    }
+  };
+  walk(dir);
+  return hash.digest('hex').slice(0, 10);
+}
+const ASSET_VERSION = hashDir(config.CLIENT_DIR);
+const pages = {};
+for (const name of ['index', 'join', 'host']) {
+  pages[name] = fs.readFileSync(path.join(config.CLIENT_DIR, `${name}.html`), 'utf8').replaceAll('__V__', ASSET_VERSION);
+}
+const sendPage = (name) => (_req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.type('html').send(pages[name]);
+};
+app.get(['/', '/index.html'], sendPage('index'));
+app.get(['/join', '/join.html'], sendPage('join'));
+app.get(['/host', '/host.html'], sendPage('host'));
+
+app.use(
+  express.static(config.CLIENT_DIR, {
+    index: false,
+    setHeaders(res) {
+      // Versioned URLs never change, so they can be cached for a year; anything else is re-checked.
+      res.setHeader('Cache-Control', res.req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache');
+    },
+  })
+);
 app.use('/media', express.static(path.join(config.TRIVIA_DIR, 'media')));
 
 app.get('/api/config', (_req, res) => {

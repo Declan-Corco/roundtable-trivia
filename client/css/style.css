@@ -3,7 +3,7 @@
 
 @font-face {
   font-family: "Fredoka";
-  src: url("/fonts/fredoka.woff2") format("woff2");
+  src: url("/fonts/fredoka.woff2?v=2") format("woff2");
   font-weight: 300 700;
   font-style: normal;
   font-display: swap;
