@@ -177,7 +177,7 @@ io.on('connection', (socket) => {
 
       // The chosen game + categories + settings → the questions for this round (see games.js).
       // Online categories are fetched live here, which can take a few seconds.
-      const { game: def, round: set } = await buildRound({ game: gameId, packs, customSet, settings });
+      const { game: def, round: set, settings: chosen } = await buildRound({ game: gameId, packs, customSet, settings });
 
       const pin = newPin();
       const joinUrl = `${baseUrlFor(socket)}/join?pin=${pin}`;
@@ -189,6 +189,8 @@ io.on('connection', (socket) => {
         gameId: def.id,
         gameName: def.name,
         mode: def.mode,
+        stat: def.stat,
+        wagerTime: chosen.wagerTime,
         joinUrl,
         qr,
         maxPlayers: config.MAX_PLAYERS,
@@ -253,9 +255,18 @@ io.on('connection', (socket) => {
 
   socket.on(
     'player:answer',
-    handler(async ({ index }) => {
+    handler(async ({ index, guess, value }) => {
       const game = playerGame();
-      game.submitAnswer(socket.data.playerId, index);
+      // index: A-D choice · guess: Split Decision's % · value: Sticker Shock's number
+      game.submitAnswer(socket.data.playerId, { index, guess, value });
+    })
+  );
+
+  socket.on(
+    'player:wager',
+    handler(async ({ amount }) => {
+      const game = playerGame();
+      game.submitWager(socket.data.playerId, amount);
     })
   );
 

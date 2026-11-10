@@ -97,6 +97,32 @@
     </div>
   </section>
 
+  <!-- 3a. Wager Wars: the category is shown and everyone bets before the question -->
+  <section class="screen wager-screen" id="screen-wager" hidden>
+    <div class="q-top">
+      <span class="q-counter" id="w-progress"></span>
+      <span class="tagline">Place your bets</span>
+      <h1 class="w-category" id="w-category"></h1>
+      <span class="chip-line" id="w-tags"></span>
+    </div>
+    <div class="table-wrap w-table" id="w-table">
+      <div class="seats" id="w-seats"></div>
+      <svg class="ring" viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="ring-track" cx="100" cy="100" r="90" pathLength="100"/>
+        <circle class="ring-fill" id="w-ring" cx="100" cy="100" r="90" pathLength="100"/>
+      </svg>
+      <div class="tabletop">
+        <span class="tt-big" id="w-timer"></span>
+        <span class="tt-sub" id="w-label"></span>
+      </div>
+    </div>
+    <p class="w-rules">Bet on your phone. A right answer wins your bet, a wrong one loses it.</p>
+    <div class="q-foot">
+      <span id="w-pin"></span>
+      <button class="btn" id="w-next" type="button">Close bets</button>
+    </div>
+  </section>
+
   <!-- 3. "Get ready" intro -->
   <section class="screen intro" id="screen-intro" hidden>
     <div class="q-counter" id="intro-counter"></div>
@@ -110,6 +136,7 @@
     <div class="q-top">
       <span class="q-counter" id="q-progress"></span>
       <h1 class="q-text" id="q-text"></h1>
+      <p class="q-hint" id="q-hint"></p>
       <div class="q-media" id="q-media"></div>
     </div>
     <div class="q-stage" id="q-stage">
@@ -131,6 +158,20 @@
       <span id="q-pin"></span>
       <span class="q-credit" id="q-credit"></span>
       <button class="btn" id="q-next" type="button">Skip</button>
+    </div>
+  </section>
+
+  <!-- 5b. Reveal for Split Decision (the split + everyone's guesses) and Sticker Shock (the price + the bids) -->
+  <section class="screen nr-screen" id="screen-nreveal" hidden>
+    <div class="q-top">
+      <span class="q-counter" id="nr-progress"></span>
+      <h1 class="q-text" id="nr-question"></h1>
+    </div>
+    <div class="nr-body" id="nr-body"></div>
+    <div class="q-foot">
+      <span id="nr-summary"></span>
+      <span class="q-credit" id="nr-note"></span>
+      <button class="btn btn-primary" id="nr-next" type="button">Standings</button>
     </div>
   </section>
 

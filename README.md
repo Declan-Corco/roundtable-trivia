@@ -8,6 +8,9 @@ The host picks a game first, then its categories and settings:
 |---|---|
 | **Trivia** | Pick the right answer. Faster correct answers score more. Questions come live from Open Trivia DB (see below), or from your own files. |
 | **Majority Rules** | No right answers. Pick what most of the table picks. |
+| **Wager Wars** | Trivia with bets. See the category, bet some of your points, then answer: win or lose the bet. |
+| **Split Decision** | Pick A or B, then guess what % of the room picked A. Closest guess wins. |
+| **Sticker Shock** | Type a price. Closest without going over wins. |
 
 ```
 Roundtable/

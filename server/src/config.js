@@ -19,6 +19,10 @@ module.exports = {
   TRIVIA_DIR: process.env.TRIVIA_DIR || path.join(__dirname, '..', 'trivia'),
   // Folder containing Majority Rules question packs.
   MAJORITY_DIR: process.env.MAJORITY_DIR || path.join(__dirname, '..', 'majority'),
+  // Folder containing Split Decision question packs (two answers each).
+  SPLIT_DIR: process.env.SPLIT_DIR || path.join(__dirname, '..', 'split'),
+  // Folder containing Sticker Shock price packs.
+  PRICES_DIR: process.env.PRICES_DIR || path.join(__dirname, '..', 'prices'),
   // Folder containing the website frontend.
   CLIENT_DIR: process.env.CLIENT_DIR || path.join(__dirname, '..', '..', 'client'),
   // Allow hosts to upload a trivia .json file from their own computer.

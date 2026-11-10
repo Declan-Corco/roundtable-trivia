@@ -1,0 +1,27 @@
+{
+  "title": "Down South",
+  "description": "Southern food fights and game-day debates.",
+  "defaultTime": 20,
+  "questions": [
+    { "question": "Waffle House or Whataburger?", "answers": ["Waffle House", "Whataburger"] },
+    { "question": "Sweet tea or unsweet?", "answers": ["Sweet", "Unsweet"] },
+    { "question": "Biscuits or cornbread?", "answers": ["Biscuits", "Cornbread"] },
+    { "question": "Boiled peanuts: love them or hate them?", "answers": ["Love them", "Hate them"] },
+    { "question": "Chick-fil-A or Popeyes?", "answers": ["Chick-fil-A", "Popeyes"] },
+    { "question": "Barbecue sauce: white or red?", "answers": ["White", "Red"] },
+    { "question": "Grits: sweet or savory?", "answers": ["Sweet", "Savory"] },
+    { "question": "Pecan pie or sweet potato pie?", "answers": ["Pecan", "Sweet potato"] },
+    { "question": "Is it \"y'all\" or \"you guys\"?", "answers": ["Y'all", "You guys"] },
+    { "question": "Game day: tailgate or watch from the couch?", "answers": ["Tailgate", "The couch"] },
+    { "question": "Iron Bowl: Alabama or Auburn?", "answers": ["Alabama", "Auburn"] },
+    { "question": "Fried green tomatoes: yes or no?", "answers": ["Yes", "No"] },
+    { "question": "Mac and cheese: a side or a vegetable?", "answers": ["A side", "A vegetable"] },
+    { "question": "Crawfish boil or fish fry?", "answers": ["Crawfish boil", "Fish fry"] },
+    { "question": "Coke or Pepsi?", "answers": ["Coke", "Pepsi"] },
+    { "question": "Banana pudding or peach cobbler?", "answers": ["Banana pudding", "Peach cobbler"] },
+    { "question": "Lake day or beach day?", "answers": ["Lake", "Beach"] },
+    { "question": "Pimento cheese: delicious or no thanks?", "answers": ["Delicious", "No thanks"] },
+    { "question": "Do you put sugar in your cornbread?", "answers": ["Yes", "Never"] },
+    { "question": "Duke's or Hellmann's mayonnaise?", "answers": ["Duke's", "Hellmann's"] }
+  ]
+}

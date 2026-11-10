@@ -130,7 +130,7 @@ function normalise(r, categoryTitle) {
     answers = shuffle([correctText, ...(r.incorrect_answers || []).map(decode).slice(0, 3)]);
     correct = [answers.indexOf(correctText)];
   }
-  return { question, answers, correct, category: categoryTitle };
+  return { question, answers, correct, category: categoryTitle, difficulty: r.difficulty || null };
 }
 
 // ------------------------------------------------------------------ public interface

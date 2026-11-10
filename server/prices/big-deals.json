@@ -1,0 +1,28 @@
+{
+  "title": "Big Deals",
+  "description": "Famous buyouts and price tags from history. Guess in billions or millions.",
+  "defaultTime": 30,
+  "prefix": "$",
+  "suffix": "billion",
+  "questions": [
+    { "question": "Facebook buys Instagram, 2012", "answer": 1, "note": "Announced April 2012" },
+    { "question": "Facebook buys WhatsApp, 2014", "answer": 19, "note": "Announced February 2014" },
+    { "question": "Google buys YouTube, 2006", "answer": 1.65, "note": "Announced October 2006" },
+    { "question": "Microsoft buys Minecraft maker Mojang, 2014", "answer": 2.5, "note": "Announced September 2014" },
+    { "question": "Disney buys Pixar, 2006", "answer": 7.4, "note": "Announced January 2006" },
+    { "question": "Disney buys Marvel, 2009", "answer": 4, "note": "Announced August 2009" },
+    { "question": "Disney buys Lucasfilm (and Star Wars), 2012", "answer": 4.05, "note": "Announced October 2012" },
+    { "question": "Amazon buys Whole Foods, 2017", "answer": 13.7, "note": "Announced June 2017" },
+    { "question": "Amazon buys MGM, 2022", "answer": 8.45, "note": "Completed March 2022" },
+    { "question": "Elon Musk buys Twitter, 2022", "answer": 44, "note": "Completed October 2022" },
+    { "question": "Microsoft buys Activision Blizzard, 2023", "answer": 68.7, "note": "The agreed price, announced January 2022" },
+    { "question": "Microsoft buys LinkedIn, 2016", "answer": 26.2, "note": "Announced June 2016" },
+    { "question": "Microsoft buys GitHub, 2018", "answer": 7.5, "note": "Announced June 2018" },
+    { "question": "Apple buys Beats, 2014", "answer": 3, "note": "Announced May 2014" },
+    { "question": "eBay buys PayPal, 2002", "answer": 1.5, "note": "Announced July 2002" },
+    { "question": "The United States buys the Louisiana Territory, 1803", "answer": 15, "suffix": "million", "note": "The Louisiana Purchase, 1803" },
+    { "question": "The United States buys Alaska from Russia, 1867", "answer": 7.2, "suffix": "million", "note": "Signed March 1867" },
+    { "question": "Leonardo da Vinci's \"Salvator Mundi\" sells at auction, 2017", "answer": 450.3, "suffix": "million", "note": "Christie's New York, November 2017: the most ever paid for a painting" },
+    { "question": "The Boston Red Sox sell Babe Ruth to the New York Yankees, 1919", "answer": 100000, "suffix": "", "note": "Announced January 1920" }
+  ]
+}

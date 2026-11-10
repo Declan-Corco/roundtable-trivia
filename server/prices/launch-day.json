@@ -1,0 +1,29 @@
+{
+  "title": "Launch Day",
+  "description": "What famous gadgets and consoles cost the day they came out (US prices).",
+  "defaultTime": 30,
+  "prefix": "$",
+  "questions": [
+    { "question": "The original iPhone (4 GB), 2007", "answer": 499, "note": "US launch price, June 2007" },
+    { "question": "Nintendo Switch, 2017", "answer": 299.99, "note": "US launch price, March 2017" },
+    { "question": "Nintendo Switch 2, 2025", "answer": 449.99, "note": "US launch price, June 2025" },
+    { "question": "PlayStation 5 with a disc drive, 2020", "answer": 499.99, "note": "US launch price, November 2020" },
+    { "question": "PlayStation 3 (60 GB), 2006", "answer": 599, "note": "US launch price, November 2006" },
+    { "question": "PlayStation 2, 2000", "answer": 299, "note": "US launch price, October 2000" },
+    { "question": "Nintendo Wii, 2006", "answer": 249.99, "note": "US launch price, November 2006" },
+    { "question": "Xbox One, 2013", "answer": 499, "note": "US launch price, November 2013" },
+    { "question": "The original Xbox, 2001", "answer": 299, "note": "US launch price, November 2001" },
+    { "question": "Nintendo 64, 1996", "answer": 199.99, "note": "US launch price, September 1996" },
+    { "question": "Super Nintendo, 1991", "answer": 199.99, "note": "US launch price, August 1991, with Super Mario World" },
+    { "question": "The original Game Boy, 1989", "answer": 89.99, "note": "US launch price, July 1989" },
+    { "question": "Sega Dreamcast, 1999", "answer": 199, "note": "US launch price, 9/9/99" },
+    { "question": "The original iPod, 2001", "answer": 399, "note": "US launch price, October 2001" },
+    { "question": "The first iPad (16 GB, Wi-Fi), 2010", "answer": 499, "note": "US launch price, April 2010" },
+    { "question": "iPhone X, 2017", "answer": 999, "note": "US launch price, November 2017" },
+    { "question": "Apple's first AirPods, 2016", "answer": 159, "note": "US launch price, December 2016" },
+    { "question": "Apple Vision Pro, 2024", "answer": 3499, "note": "US launch price, February 2024" },
+    { "question": "Steam Deck (64 GB), 2022", "answer": 399, "note": "US launch price, February 2022" },
+    { "question": "The first Apple Macintosh, 1984", "answer": 2495, "note": "US launch price, January 1984" },
+    { "question": "A Ford Model T, 1908", "answer": 850, "note": "Price of the touring car when it launched in 1908" }
+  ]
+}

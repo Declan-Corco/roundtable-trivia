@@ -64,6 +64,15 @@
     if (g.mode === 'majority') {
       // Most of the table on one colour
       ['teal', 'teal', 'red', 'teal', 'yellow', 'teal'].forEach((c) => art.append(el('span', { className: `dot s-${c}` })));
+    } else if (g.mode === 'wager') {
+      // A stack of betting chips
+      ['red', 'teal', 'yellow'].forEach((c) => art.append(el('span', { className: `chip-art s-${c}` })));
+    } else if (g.mode === 'split') {
+      // A bar split between A and B
+      art.append(el('span', { className: 'split-art' }, el('span', { dataset: { i: 0 } }, 'A'), el('span', { dataset: { i: 1 } }, 'B')));
+    } else if (g.mode === 'closest') {
+      // A price tag
+      art.append(el('span', { className: 'tag-art' }, '$'));
     } else {
       RT.LETTERS.forEach((L, i) => art.append(el('span', { className: 'mini-tile', dataset: { i } }, L)));
     }
@@ -322,11 +331,16 @@
       renderGuests(players, tableSize);
     }
   });
-  socket.on('host:answers', ({ answered, playerCount, seats, tableSize }) => {
-    if (current?.phase !== 'question') return;
+  socket.on('host:answers', ({ phase, answered, playerCount, seats, tableSize }) => {
+    if (!current || current.phase !== phase) return;
     Object.assign(current, { seats, tableSize });
-    $('#q-answered-label').textContent = `${answered} of ${playerCount} in`;
-    renderAnswerSeats(seats, tableSize);
+    if (phase === 'wager') {
+      $('#w-label').textContent = `${answered} of ${playerCount} bets in`;
+      renderAnswerSeats($('#w-seats'), seats, tableSize);
+    } else if (phase === 'question') {
+      $('#q-answered-label').textContent = `${answered} of ${playerCount} in`;
+      renderAnswerSeats($('#q-seats'), seats, tableSize);
+    }
   });
   socket.on('game:ended', ({ reason }) => {
     storage.remove(sessionStorage, SESSION_KEY);
@@ -352,11 +366,15 @@
     switch (state.phase) {
       case 'lobby':
         return renderLobby(state);
+      case 'wager':
+        return renderWager(state);
       case 'intro':
         return renderIntro(state);
       case 'question':
         return renderQuestion(state, false);
       case 'reveal':
+        if (state.input === 'split') return renderSplitReveal(state);
+        if (state.input === 'number') return renderClosestReveal(state);
         return renderQuestion(state, true);
       case 'scoreboard':
         return renderStandings(state);
@@ -420,6 +438,29 @@
     );
   }
 
+  // ---- Wager Wars: the category is up, bets are coming in
+
+  function renderWager(s) {
+    $('#w-progress').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
+    $('#w-category').textContent = s.category || 'Mystery category';
+    const tags = [];
+    if (s.difficulty) tags.push(el('span', { className: 'chip' }, s.difficulty[0].toUpperCase() + s.difficulty.slice(1)));
+    if (s.points === 'double') tags.push(el('span', { className: 'chip gold' }, 'Double winnings'));
+    if (s.points === 'none') tags.push(el('span', { className: 'chip' }, 'Just for fun'));
+    $('#w-tags').replaceChildren(...tags);
+    $('#w-pin').textContent = `Join with PIN ${s.pin}`;
+    $('#w-label').textContent = `${s.answered} of ${s.playerCount} bets in`;
+    const table = $('#w-table');
+    table.classList.remove('low');
+    showScreen('screen-wager');
+    drainRing($('#w-ring'), s.timeLeft, s.time * 1000);
+    stopTimer = countdown(s.timeLeft, s.time * 1000, (sec) => {
+      $('#w-timer').textContent = sec;
+      table.classList.toggle('low', sec <= 5 && sec > 0);
+    });
+    renderAnswerSeats($('#w-seats'), s.seats, s.tableSize);
+  }
+
   // ---- Intro
 
   function renderIntro(s) {
@@ -442,6 +483,7 @@
     // Online questions are credited to their database, as their licenses require.
     $('#q-credit').textContent = s.credit ? `Question: ${s.credit}` : '';
     $('#q-media').replaceChildren(s.image ? el('img', { src: s.image, alt: '' }) : '');
+    $('#q-hint').textContent = questionHint(s, reveal);
 
     // Even-numbered answers sit on the left, odd on the right, all facing the table.
     const left = [];
@@ -493,7 +535,7 @@
         timer.textContent = sec;
         table.classList.toggle('low', sec <= 5 && sec > 0);
       });
-      renderAnswerSeats(s.seats, s.tableSize);
+      renderAnswerSeats($('#q-seats'), s.seats, s.tableSize);
     }
 
     const next = $('#q-next');
@@ -501,11 +543,138 @@
     next.classList.toggle('btn-primary', reveal);
   }
 
-  function renderAnswerSeats(seats, tableSize) {
+  /** The line under the question: how to answer this game, or (Wager Wars) the biggest swings. */
+  function questionHint(s, reveal) {
+    if (reveal && s.mode === 'wager' && s.bets) {
+      const { biggestWin: w, biggestLoss: l } = s.bets;
+      return [w && `Biggest win: ${w.name} ${RT.signed(w.points)}`, l && `Biggest loss: ${l.name} ${RT.signed(l.points)}`]
+        .filter(Boolean)
+        .join('  ·  ');
+    }
+    if (reveal) return '';
+    if (s.input === 'split') return `Pick a side, then guess what % of the room picks “${s.answers[0]}”`;
+    if (s.input === 'number') return 'Type your guess on your phone. Closest without going over wins.';
+    return '';
+  }
+
+  function renderAnswerSeats(container, seats, tableSize) {
     renderSeats(
-      $('#q-seats'),
+      container,
       seats.map((p) => ({ id: p.id, seat: p.seat, cls: p.answered ? `taken s-${seatColor(p.seat)} in` : 'waiting', name: p.name, label: p.seat })),
       tableSize
+    );
+  }
+
+  // ---- Reveals for Split Decision and Sticker Shock
+
+  function showNumberReveal(s, body, summary) {
+    $('#nr-progress').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
+    $('#nr-question').textContent = s.question;
+    $('#nr-body').replaceChildren(...body);
+    $('#nr-summary').textContent = summary;
+    $('#nr-note').textContent = s.note || '';
+    $('#nr-next').textContent = s.isLast ? 'Final results' : 'Standings';
+    showScreen('screen-nreveal');
+  }
+
+  /** Split Decision: how the room actually split, and where everyone's guess landed. */
+  function renderSplitReveal(s) {
+    if (s.pct == null) return showNumberReveal(s, [el('p', { className: 'big-title' }, 'Nobody voted')], '');
+    const pctA = Math.round(s.pct);
+    const sides = s.answers.map((text, i) => {
+      const pct = i === 0 ? pctA : 100 - pctA;
+      const side = el(
+        'div',
+        { className: 'split-side', dataset: { i } },
+        el('span', { className: 'split-pct' }, `${pct}%`),
+        el('span', { className: 'split-label' }, `${RT.LETTERS[i]} · ${text} (${s.counts[i]})`)
+      );
+      side.style.flexGrow = '50'; // starts even, then slides to the real split
+      requestAnimationFrame(() => requestAnimationFrame(() => (side.style.flexGrow = String(Math.max(pct, 0.001)))));
+      return side;
+    });
+    const bar = el('div', { className: 'split-bar' }, ...sides);
+
+    // Everyone's guess on a 0-100% line. Guesses within 3 points of each other stack up.
+    const stacks = new Map();
+    const dots = s.guesses.map((g) => {
+      const bucket = Math.round(g.guess / 3);
+      const level = stacks.get(bucket) || 0;
+      stacks.set(bucket, level + 1);
+      return el(
+        'span',
+        {
+          className: `gt-dot s-${seatColor(g.seat)}${g.closest ? ' closest' : ''}`,
+          title: `${g.name}: ${g.guess}%`,
+          style: `left:${g.guess}%; --level:${Math.min(level, 4)}`,
+        },
+        g.seat
+      );
+    });
+    const track = el(
+      'div',
+      { className: 'guess-track' },
+      el('span', { className: 'gt-title' }, `Guesses: what % picked “${s.answers[0]}”`),
+      el('div', { className: 'gt-line' }, ...[0, 25, 50, 75, 100].map((t) => el('span', { className: 'gt-tick', style: `left:${t}%` }, `${t}%`))),
+      el('span', { className: 'gt-actual', style: `left:${s.pct}%` }, el('span', {}, `${pctA}%`)),
+      ...dots
+    );
+
+    const best = s.guesses.slice(0, 5).map((g, i) =>
+      el(
+        'li',
+        { className: g.closest ? 'winner' : '', style: `animation-delay:${0.6 + i * 0.08}s` },
+        el('span', { className: `seat-no s-${seatColor(g.seat)}` }, g.seat),
+        el('span', { className: 'name' }, g.name),
+        el('span', { className: 'muted' }, `${g.guess}% · off by ${g.error}`),
+        el('span', { className: 'pts' }, RT.signed(g.points))
+      )
+    );
+    const closest = s.guesses.filter((g) => g.closest);
+    showNumberReveal(
+      s,
+      [bar, track, el('ol', { className: 'nr-list' }, ...best)],
+      closest.length ? `Closest: ${closest.map((g) => g.name).join(', ')}` : ''
+    );
+  }
+
+  /** Sticker Shock: the real price, with the bids around it (over the price above, under below). */
+  function renderClosestReveal(s) {
+    const fmt = (v) => RT.formatValue(v, s.prefix, s.suffix);
+    const price = el(
+      'div',
+      { className: 'price-reveal' },
+      el('span', { className: 'pr-label' }, 'The actual answer'),
+      el('span', { className: 'pr-value' }, fmt(s.answer))
+    );
+    if (!s.guesses.length) return showNumberReveal(s, [price, el('p', { className: 'muted' }, 'Nobody guessed.')], '');
+
+    // Show the bids nearest the price: a few over it, more under it.
+    const over = s.guesses.filter((g) => g.over); // highest first
+    const under = s.guesses.filter((g) => !g.over);
+    const shownOver = over.slice(-3);
+    const shownUnder = under.slice(0, 6);
+    const row = (g, i) =>
+      el(
+        'li',
+        { className: g.over ? 'over' : g.winner ? 'winner' : '', style: `animation-delay:${0.5 + i * 0.07}s` },
+        el('span', { className: `seat-no s-${seatColor(g.seat)}` }, g.seat),
+        el('span', { className: 'name' }, g.name),
+        el('span', { className: 'bid' }, fmt(g.value)),
+        el('span', { className: 'pts' }, g.over ? 'over' : g.exact ? 'exact! ' + RT.signed(g.points) : RT.signed(g.points))
+      );
+    const rows = [];
+    if (over.length > shownOver.length) rows.push(el('li', { className: 'more' }, `+ ${over.length - shownOver.length} more over`));
+    shownOver.forEach((g) => rows.push(row(g, rows.length)));
+    rows.push(el('li', { className: 'actual', style: `animation-delay:${0.5 + rows.length * 0.07}s` }, el('span', {}, '▶'), el('span', { className: 'name' }, 'Actual'), el('span', { className: 'bid' }, fmt(s.answer)), el('span', {})));
+    shownUnder.forEach((g) => rows.push(row(g, rows.length)));
+    if (under.length > shownUnder.length) rows.push(el('li', { className: 'more' }, `+ ${under.length - shownUnder.length} more under`));
+
+    const winners = s.guesses.filter((g) => g.winner);
+    showNumberReveal(
+      s,
+      [price, el('ol', { className: 'ladder' }, ...rows)],
+      winners.length ? `Winning bid: ${winners.map((g) => g.name).join(', ')}` : 'Everyone went over!'
     );
   }
 
@@ -540,7 +709,7 @@
           'div',
           { className: 'race-score' },
           el('span', { className: 'score' }, p.score.toLocaleString()),
-          p.delta ? el('span', { className: 'delta' }, `+${p.delta.toLocaleString()}`) : null
+          p.delta ? el('span', { className: 'delta' + (p.delta < 0 ? ' down' : '') }, RT.signed(p.delta)) : null
         )
       );
     });
@@ -565,7 +734,7 @@
             { className: 'block' },
             el('span', { className: 'medal' }, medals[i]),
             el('span', { className: 'pscore' }, p.score.toLocaleString()),
-            el('small', {}, `${p.correct}/${s.total} ${s.mode === 'majority' ? 'with the table' : 'correct'}`)
+            el('small', {}, `${p.correct}/${s.total} ${s.stat}`)
           )
         )
       )
@@ -587,6 +756,8 @@
 
   $('#start-btn').addEventListener('click', () => send('host:start'));
   $('#q-next').addEventListener('click', () => send('host:next'));
+  $('#w-next').addEventListener('click', () => send('host:next'));
+  $('#nr-next').addEventListener('click', () => send('host:next'));
   $('#score-next').addEventListener('click', () => send('host:next'));
   $('#lock-btn').addEventListener('click', () => send('host:lock', { locked: !current?.locked }));
 
@@ -610,7 +781,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.target.closest('input, textarea, button')) return;
     if (e.key !== ' ' && e.key !== 'ArrowRight' && e.key !== 'PageDown') return;
-    const btn = ['#start-btn', '#q-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
+    const btn = ['#start-btn', '#w-next', '#q-next', '#nr-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
     if (btn) {
       e.preventDefault();
       btn.click();

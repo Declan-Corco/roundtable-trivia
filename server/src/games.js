@@ -1,15 +1,17 @@
 // The games a host can pick. Each game declares where its questions come from and its settings;
 // the host screen builds its setup page from this list, so adding a game here is all it takes.
 //
-// A game is played by the shared engine in game.js: a run of multiple-choice questions (A-D),
-// a timer, a reveal and standings. What differs per game is where the questions come from and how
-// answers score (`mode`):
-//   'correct'  — points for picking a right answer (trivia)
-//   'majority' — points for picking what most of the table picked (no right answers)
+// A game is played by the shared engine in game.js: a run of questions, a timer, a reveal and
+// standings. What differs per game is where the questions come from and how answers score (`mode`):
+//   'correct'  — points for picking a right answer, faster scores more (Trivia)
+//   'majority' — points for picking what most of the table picked (Majority Rules)
+//   'wager'    — see the category, bet some of your points, then answer: win or lose the bet (Wager Wars)
+//   'split'    — pick A or B, then guess what % of the room picked A; closest guess wins (Split Decision)
+//   'closest'  — type a number; closest without going over wins (Sticker Shock)
 //
 // Question sources:
-//   packs   — .json files in the game's folder on this server (see trivia/README.md)
-//   online  — live categories from Open Trivia DB (see sources.js); trivia only
+//   packs   — .json files in the game's folder on this server (see the README in each folder)
+//   online  — live categories from Open Trivia DB (see sources.js); trivia games only
 const crypto = require('crypto');
 const config = require('./config');
 const { loadSets, validateSet } = require('./trivia');
@@ -53,6 +55,15 @@ const DIFFICULTY_SETTING = {
   default: 'any',
 };
 
+const WAGER_TIME_SETTING = {
+  id: 'wagerTime',
+  label: 'Time to bet',
+  options: [10, 15, 20].map((s) => ({ value: s, label: `${s}s` })),
+  default: 15,
+};
+
+// `stat` names what `correctCount` means on the final screens ("7/10 correct").
+// `packOptions` are the rules this game's .json packs must follow (see validateSet in trivia.js).
 const GAMES = [
   {
     id: 'trivia',
@@ -62,8 +73,9 @@ const GAMES = [
       'Pick one or more categories. Questions come live from Open Trivia DB, or from your own files. ' +
       'Everyone answers A, B, C or D, and faster correct answers score more.',
     mode: 'correct',
+    stat: 'correct',
     dir: () => config.TRIVIA_DIR,
-    requireCorrect: true,
+    packOptions: { requireCorrect: true },
     online: true,
     defaultPacks: ['otdb:9'],
     settings: [countSetting([5, 10, 15, 20, 30], 10), DIFFICULTY_SETTING, timeSetting([0, 10, 20, 30], 20), ORDER_SETTING],
@@ -74,19 +86,74 @@ const GAMES = [
     tagline: 'No right answers. Pick what the table picks.',
     description: 'This-or-that questions with no right answer. You score by siding with the most popular choice.',
     mode: 'majority',
+    stat: 'with the table',
     dir: () => config.MAJORITY_DIR,
-    requireCorrect: false,
+    packOptions: { requireCorrect: false },
     online: false,
     defaultPacks: [],
     settings: [countSetting([5, 10, 15, 0], 10), timeSetting([10, 15, 20, 30], 15), ORDER_SETTING],
+  },
+  {
+    id: 'wager',
+    name: 'Wager Wars',
+    tagline: 'See the category, bet your points, then answer.',
+    description:
+      'Trivia with bets. Everyone starts with 1,000 points. Before each question you see its category and bet ' +
+      'some or all of your points on your phone. A right answer wins the bet; a wrong one loses it.',
+    mode: 'wager',
+    stat: 'correct',
+    dir: () => config.TRIVIA_DIR,
+    packOptions: { requireCorrect: true },
+    online: true,
+    defaultPacks: ['otdb:9', 'otdb:11', 'otdb:21'],
+    settings: [
+      countSetting([5, 10, 15, 20], 10),
+      DIFFICULTY_SETTING,
+      WAGER_TIME_SETTING,
+      timeSetting([0, 10, 20, 30], 20),
+      ORDER_SETTING,
+    ],
+  },
+  {
+    id: 'split',
+    name: 'Split Decision',
+    tagline: 'Pick a side, then guess how the room split.',
+    description:
+      'Everyone votes A or B, then guesses what percentage of the room picked A. ' +
+      'The closer your guess, the more you score. The closest guess gets a bonus.',
+    mode: 'split',
+    stat: 'closest',
+    dir: () => config.SPLIT_DIR,
+    packOptions: { requireCorrect: false, answerCount: 2 },
+    online: false,
+    defaultPacks: [],
+    settings: [countSetting([5, 10, 15, 0], 10), timeSetting([15, 20, 30], 20), ORDER_SETTING],
+  },
+  {
+    id: 'sticker',
+    name: 'Sticker Shock',
+    tagline: 'Guess the price. Closest without going over.',
+    description:
+      'Everyone types a price on their phone. The closest guess that is not over the real price wins. ' +
+      'Guesses under the price also score, the closer the better. Going over scores nothing.',
+    mode: 'closest',
+    stat: 'won',
+    dir: () => config.PRICES_DIR,
+    packOptions: { kind: 'number' },
+    online: false,
+    defaultPacks: [],
+    settings: [countSetting([5, 10, 15, 0], 10), timeSetting([20, 30, 45], 30), ORDER_SETTING],
   },
 ];
 
 const byId = new Map(GAMES.map((g) => [g.id, g]));
 
 function loadPacks(game) {
-  return loadSets(game.dir(), { requireCorrect: game.requireCorrect });
+  return loadSets(game.dir(), game.packOptions);
 }
+
+/** Questions from a pack, labelled with the pack's title as their category (shown in Wager Wars). */
+const withCategory = (questions, title) => questions.map((q) => ({ ...q, category: q.category || title }));
 
 /** Everything the host setup screen needs: games, their categories and settings. */
 function listGames() {
@@ -155,7 +222,7 @@ async function buildRound({ game: gameId, packs = [], customSet, settings: rawSe
   let custom = null;
   if (customSet) {
     if (!config.ALLOW_UPLOADS) throw new Error('Uploading question files is disabled on this server.');
-    custom = validateSet(customSet, 'Uploaded pack', { requireCorrect: game.requireCorrect });
+    custom = validateSet(customSet, 'Uploaded pack', game.packOptions);
   }
   const groupCount = online.length + local.length + (custom ? 1 : 0);
   if (!groupCount) throw new Error('Pick at least one category.');
@@ -175,7 +242,7 @@ async function buildRound({ game: gameId, packs = [], customSet, settings: rawSe
         try {
           const [norm] = validateSet({ questions: [q] }, '', { requireCorrect: true }).questions;
           // The credit is shown on the host screen with the question (license attribution).
-          valid.push({ ...norm, credit: sources.CREDIT });
+          valid.push({ ...norm, credit: sources.CREDIT, difficulty: q.difficulty });
         } catch {
           /* skip a malformed question from the API */
         }
@@ -188,11 +255,11 @@ async function buildRound({ game: gameId, packs = [], customSet, settings: rawSe
     titles.push(...online.map((c) => c.title));
   }
   for (const pack of local) {
-    groups.push([...pack.questions]);
+    groups.push(withCategory(pack.questions, pack.title));
     titles.push(pack.title);
   }
   if (custom) {
-    groups.push([...custom.questions]);
+    groups.push(withCategory(custom.questions, custom.title));
     titles.push(custom.title);
   }
 
@@ -213,7 +280,7 @@ async function buildRound({ game: gameId, packs = [], customSet, settings: rawSe
   if (!questions.length) throw new Error('No questions were found for those choices.');
 
   const title = [...new Set(titles)].length <= 2 ? [...new Set(titles)].join(' & ') : `${new Set(titles).size} categories`;
-  return { game, round: { title, questions } };
+  return { game, settings, round: { title, questions } };
 }
 
 module.exports = { listGames, buildRound, GAMES };

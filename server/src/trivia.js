@@ -1,10 +1,12 @@
-// Loads and validates question packs (trivia sets, Majority Rules packs). A pack is a JSON file —
-// see trivia/README.md. Packs for games without right answers are loaded with requireCorrect: false.
+// Loads and validates question packs (trivia sets, Majority Rules / Split Decision / Sticker Shock
+// packs). A pack is a JSON file — see the README in each game's folder. Each game says which rules
+// its packs follow (see `packOptions` in games.js).
 const fs = require('fs');
 const path = require('path');
 
 const MAX_QUESTIONS = 200;
 const POINT_MODES = ['standard', 'double', 'none'];
+const MAX_NUMBER = 1e12; // largest numeric answer (Sticker Shock)
 
 function clampInt(value, min, max, fallback) {
   const n = parseInt(value, 10);
@@ -19,11 +21,18 @@ function cleanText(value, maxLen) {
     .slice(0, maxLen);
 }
 
+const isNumberLike = (v) => typeof v === 'number' || (typeof v === 'string' && v.trim() !== '');
+
 /**
- * Validates raw (parsed JSON) trivia data and returns a normalised set.
+ * Validates raw (parsed JSON) question data and returns a normalised set.
  * Throws an Error with a human-readable message if the data is invalid.
+ *
+ * Options:
+ *   requireCorrect — each question must say which answer is right (trivia)
+ *   answerCount    — each question must have exactly this many answers (Split Decision: 2)
+ *   kind           — 'choice' (answers A-D) or 'number' (a numeric "answer", e.g. a price)
  */
-function validateSet(raw, fallbackTitle = 'Untitled set', { requireCorrect = true } = {}) {
+function validateSet(raw, fallbackTitle = 'Untitled set', { requireCorrect = true, answerCount = null, kind = 'choice' } = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('A question pack must be a JSON object with a "questions" array.');
   }
@@ -34,12 +43,47 @@ function validateSet(raw, fallbackTitle = 'Untitled set', { requireCorrect = tru
   if (raw.questions.length > MAX_QUESTIONS) {
     throw new Error(`Too many questions (max ${MAX_QUESTIONS}).`);
   }
+  // Number packs can set a unit for every question, e.g. "prefix": "$", "suffix": "billion".
+  const packPrefix = cleanText(raw.prefix, 8);
+  const packSuffix = cleanText(raw.suffix, 24);
 
   const questions = raw.questions.map((q, i) => {
     const n = i + 1;
     if (!q || typeof q !== 'object') throw new Error(`Question ${n}: must be an object.`);
     const text = cleanText(q.question, 300);
     if (!text) throw new Error(`Question ${n}: missing "question" text.`);
+
+    const image =
+      typeof q.image === 'string' && /^(https:\/\/|\/media\/)/i.test(q.image.trim())
+        ? q.image.trim().slice(0, 500)
+        : null;
+    const common = {
+      question: text,
+      time: clampInt(q.time, 5, 240, defaultTime),
+      points: POINT_MODES.includes(q.points) ? q.points : 'standard',
+      image,
+      category: cleanText(q.category, 60) || null, // shown before betting in Wager Wars
+      note: cleanText(q.note, 200) || null, // shown with the answer, e.g. "Apple's launch price, 2007"
+    };
+
+    if (kind === 'number') {
+      const answer = Number(q.answer);
+      if (!isNumberLike(q.answer) || !Number.isFinite(answer) || answer < 0 || answer > MAX_NUMBER) {
+        throw new Error(`Question ${n}: "answer" must be a number, 0 or more.`);
+      }
+      return {
+        ...common,
+        answers: [],
+        correct: [],
+        answer,
+        prefix: q.prefix != null ? cleanText(q.prefix, 8) : packPrefix,
+        suffix: q.suffix != null ? cleanText(q.suffix, 24) : packSuffix,
+      };
+    }
+
+    if (answerCount && (!Array.isArray(q.answers) || q.answers.length !== answerCount)) {
+      throw new Error(`Question ${n}: "answers" must contain exactly ${answerCount} entries.`);
+    }
     if (!Array.isArray(q.answers) || q.answers.length < 2 || q.answers.length > 4) {
       throw new Error(`Question ${n}: "answers" must contain 2 to 4 entries.`);
     }
@@ -57,19 +101,7 @@ function validateSet(raw, fallbackTitle = 'Untitled set', { requireCorrect = tru
       }
     }
 
-    const image =
-      typeof q.image === 'string' && /^(https:\/\/|\/media\/)/i.test(q.image.trim())
-        ? q.image.trim().slice(0, 500)
-        : null;
-
-    return {
-      question: text,
-      answers,
-      correct,
-      time: clampInt(q.time, 5, 240, defaultTime),
-      points: POINT_MODES.includes(q.points) ? q.points : 'standard',
-      image,
-    };
+    return { ...common, answers, correct };
   });
 
   return {
@@ -101,4 +133,4 @@ function loadSets(dir, options = {}) {
   return { sets, errors };
 }
 
-module.exports = { loadSets, validateSet };
+module.exports = { loadSets, validateSet, MAX_NUMBER };
