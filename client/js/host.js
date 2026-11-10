@@ -47,7 +47,10 @@
             { className: 'game-text' },
             el('strong', {}, g.name),
             el('span', { className: 'desc' }, g.tagline),
-            el('span', { className: 'count' }, `${g.packs.length} categor${g.packs.length === 1 ? 'y' : 'ies'}`)
+            (() => {
+              const n = g.packs.length + (g.online?.categories.length || 0);
+              return el('span', { className: 'count' }, `${n} categor${n === 1 ? 'y' : 'ies'}`);
+            })()
           ),
           el('span', { className: 'go', 'aria-hidden': 'true' }, '→')
         )
@@ -73,7 +76,7 @@
     const game = catalog.find((g) => g.id === id);
     if (!game) return;
     const saved = (storage.get(localStorage, PREFS_KEY) || {})[id] || {};
-    const known = new Set([...game.packs.map((p) => p.id), ...game.online.flatMap((s) => s.categories.map((c) => c.id))]);
+    const known = new Set([...game.packs.map((p) => p.id), ...(game.online?.categories || []).map((c) => c.id)]);
     let packs = new Set((saved.packs || []).filter((p) => known.has(p)));
     if (!packs.size) packs = new Set(game.defaultPacks.filter((p) => known.has(p)));
     if (!packs.size && game.packs[0]) packs.add(game.packs[0].id);
@@ -145,45 +148,50 @@
         )
       );
     }
-    // Online databases: one row of category chips each, credited with their license.
-    const blocks = game.online.map((src) =>
-      el(
-        'div',
-        { className: 'source' },
+    const blocks = [];
+    const online = game.online;
+    if (online) {
+      // Popular Open Trivia DB categories, fetched live; credited as its license requires.
+      blocks.push(
         el(
           'div',
-          { className: 'source-head' },
-          el('strong', {}, src.name),
-          el('span', { className: 'live' }, 'Live'),
+          { className: 'source' },
           el(
-            'span',
-            { className: 'muted' },
-            el('a', { href: src.url, target: '_blank', rel: 'noopener' }, src.url.replace(/^https?:\/\//, '')),
-            ' · ',
-            el('a', { href: src.licenseUrl, target: '_blank', rel: 'noopener' }, src.license)
-          )
-        ),
-        el(
-          'div',
-          { className: 'chips' },
-          ...src.categories.map((c) =>
-            el(
-              'button',
-              { type: 'button', className: 'chip' + (packs.has(c.id) ? ' on' : ''), 'aria-pressed': String(packs.has(c.id)), onclick: () => toggle(c.id) },
-              c.title
+            'div',
+            { className: 'set-grid' },
+            ...online.categories.map((c) =>
+              el(
+                'button',
+                {
+                  type: 'button',
+                  className: 'set-card' + (packs.has(c.id) ? ' selected' : ''),
+                  'aria-pressed': String(packs.has(c.id)),
+                  onclick: () => toggle(c.id),
+                },
+                el('span', { className: 'tick' }, '✓'),
+                el('strong', {}, c.title),
+                el('span', { className: 'desc' }, c.description)
+              )
             )
+          ),
+          el(
+            'p',
+            { className: 'credit-line' },
+            'Questions from ',
+            el('a', { href: online.url, target: '_blank', rel: 'noopener' }, online.name),
+            ', licensed ',
+            el('a', { href: online.licenseUrl, target: '_blank', rel: 'noopener' }, online.license),
+            '.'
           )
         )
-      )
-    );
+      );
+    }
     if (cards.length) {
       blocks.push(
         el(
           'div',
           { className: 'source' },
-          game.online.length
-            ? el('div', { className: 'source-head' }, el('strong', {}, 'On this server'), el('span', { className: 'muted' }, 'Your own question files. These work offline.'))
-            : null,
+          online ? el('div', { className: 'source-head' }, el('strong', {}, 'Your own questions'), el('span', { className: 'muted' }, 'Files on this server, or upload one.')) : null,
           el('div', { className: 'set-grid' }, ...cards)
         )
       );

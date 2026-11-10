@@ -292,8 +292,9 @@ server.listen(config.PORT, config.HOST, () => {
   if (lan) console.log(`  On your LAN:  http://${lan}:${config.PORT}/host`);
   if (config.PUBLIC_URL) console.log(`  Public URL:   ${config.PUBLIC_URL}/host`);
   for (const g of listGames()) {
-    const online = g.online.reduce((n, s) => n + s.categories.length, 0);
-    console.log(`  ${(g.name + ':').padEnd(17)}${g.packs.length} local categories${online ? ` + ${online} online` : ''}`);
+    const online = g.online ? g.online.categories.length : 0;
+    const parts = [online && `${online} from ${g.online.name}`, (g.packs.length || !online) && `${g.packs.length} from files`];
+    console.log(`  ${(g.name + ':').padEnd(17)}categories: ${parts.filter(Boolean).join(' + ')}`);
     for (const e of g.errors) console.warn(`  ! Skipped ${e}`);
   }
   console.log('');

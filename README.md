@@ -6,7 +6,7 @@ The host picks a game first, then its categories and settings:
 
 | Game | How you score |
 |---|---|
-| **Trivia** | Pick the right answer. Faster correct answers score more. Questions come live from public trivia databases (see below), or from your own files. |
+| **Trivia** | Pick the right answer. Faster correct answers score more. Questions come live from Open Trivia DB (see below), or from your own files. |
 | **Majority Rules** | No right answers. Pick what most of the table picks. |
 
 ```
@@ -214,21 +214,26 @@ There's no router to configure.
 
 ## 4. Where trivia questions come from
 
-When a host opens a Trivia lobby, the server fetches questions live from two free public databases:
+When a host opens a Trivia lobby, the server fetches questions live from [Open Trivia DB](https://opentdb.com), a free public trivia database licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
-| Database | Categories | License |
-|---|---|---|
-| [Open Trivia DB](https://opentdb.com) | 24 (General Knowledge, Science & Nature, Geography, History, Film, Music, …) | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
-| [The Trivia API](https://the-trivia-api.com) | 10 (General Knowledge, Science, History, Food & Drink, …) | [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) (non-commercial use only) |
+The host picks from a few popular categories, and can tick several to mix them:
 
-- Hosts pick categories from either database, or mix them, and can set the **Difficulty** (Mixed, Easy, Medium or Hard).
-- Each online question shows a small credit line on the host screen (for example "Open Trivia DB · CC BY-SA 4.0"), as both licenses require.
-- Open Trivia DB allows **one request every 5 seconds**, and each of its categories needs its own request. A lobby that mixes several of its categories therefore takes a few seconds to open, and the button shows "Fetching questions…" meanwhile.
-- The server uses an Open Trivia DB session token, so the same question doesn't come up twice in a few hours.
-- **The server needs internet access** for online categories. If a database can't be reached, the host sees a clear error and can pick a category stored on the server instead.
-- The Trivia API's free questions are licensed for **non-commercial use only**. To use roundtable commercially (for example charging for game nights), take The Trivia API categories out of `server/src/sources.js` or buy one of its plans.
+- General Knowledge
+- Science & Nature
+- Geography
+- History
+- Film
+- Music
+- Sports
+- Animals
 
-The connectors live in [server/src/sources.js](server/src/sources.js).
+They can also set the **Difficulty**: Mixed, Easy, Medium or Hard.
+
+- Each question shows a small credit line on the host screen ("Open Trivia DB · CC BY-SA 4.0"), as the license requires.
+- Open Trivia DB allows **one request every 5 seconds**, and each category needs its own request. A lobby that mixes several categories therefore takes a few seconds to open, and the button shows "Fetching questions…" meanwhile.
+- The server uses a session token, so the same question doesn't come up twice in a few hours.
+- **The server needs internet access** for Trivia. If Open Trivia DB can't be reached, the host sees a clear error. Your own question files (next section) work offline.
+- To offer more categories, add a line to the `CATEGORIES` list in [server/src/sources.js](server/src/sources.js). Category IDs are listed at https://opentdb.com/api_category.php.
 
 ---
 

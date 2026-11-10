@@ -9,7 +9,7 @@
 //
 // Question sources:
 //   packs   — .json files in the game's folder on this server (see trivia/README.md)
-//   online  — live trivia databases (see sources.js); trivia only
+//   online  — live categories from Open Trivia DB (see sources.js); trivia only
 const crypto = require('crypto');
 const config = require('./config');
 const { loadSets, validateSet } = require('./trivia');
@@ -43,7 +43,7 @@ const ORDER_SETTING = {
 const DIFFICULTY_SETTING = {
   id: 'difficulty',
   label: 'Difficulty',
-  hint: 'Online categories only',
+  hint: "Doesn't apply to your own question files",
   options: [
     { value: 'any', label: 'Mixed' },
     { value: 'easy', label: 'Easy' },
@@ -59,7 +59,7 @@ const GAMES = [
     name: 'Trivia',
     tagline: 'Quick-fire questions. Right and fast wins.',
     description:
-      'Pick one or more categories from the online trivia databases, or your own question files. ' +
+      'Pick one or more categories. Questions come live from Open Trivia DB, or from your own files. ' +
       'Everyone answers A, B, C or D, and faster correct answers score more.',
     mode: 'correct',
     dir: () => config.TRIVIA_DIR,
@@ -101,7 +101,7 @@ function listGames() {
       allowUpload: config.ALLOW_UPLOADS,
       defaultPacks: g.defaultPacks,
       settings: g.settings.map(({ id, label, hint, options, default: def }) => ({ id, label, hint, options, default: def })),
-      online: g.online ? sources.listSources() : [],
+      online: g.online ? sources.listOnline() : null, // Open Trivia DB categories (trivia only)
       packs: [...sets.values()].map((s) => ({ id: s.id, title: s.title, description: s.description, count: s.questions.length })),
       errors,
     };
@@ -127,7 +127,7 @@ function shuffle(list) {
 }
 
 /**
- * Builds the round a host asked for: the chosen categories — online databases, files on this
+ * Builds the round a host asked for: the chosen categories — Open Trivia DB, files on this
  * server and/or an uploaded file — shuffled / trimmed / re-timed per the settings.
  * Returns the game definition and the round. Async because online questions are fetched live.
  */
@@ -169,22 +169,22 @@ async function buildRound({ game: gameId, packs = [], customSet, settings: rawSe
     const perCategory = Math.max(1, Math.min(50, Math.ceil(target / groupCount)));
     const difficulty = settings.difficulty && settings.difficulty !== 'any' ? settings.difficulty : '';
     const fetched = await sources.fetchOnline(online, perCategory, difficulty);
-    const byCategory = new Map();
-    for (const q of fetched) {
-      try {
-        const [norm] = validateSet({ questions: [q] }, '', { requireCorrect: true }).questions;
-        const key = `${q.source}:${q.category}`;
-        if (!byCategory.has(key)) byCategory.set(key, []);
-        // The credit is shown on the host screen with the question (license attribution).
-        byCategory.get(key).push({ ...norm, credit: sources.credit(q.source) });
-      } catch {
-        /* skip a malformed question from the API */
+    for (const list of fetched) {
+      const valid = [];
+      for (const q of list) {
+        try {
+          const [norm] = validateSet({ questions: [q] }, '', { requireCorrect: true }).questions;
+          // The credit is shown on the host screen with the question (license attribution).
+          valid.push({ ...norm, credit: sources.CREDIT });
+        } catch {
+          /* skip a malformed question from the API */
+        }
       }
+      if (valid.length) groups.push(valid);
     }
-    if (!byCategory.size && !local.length && !custom) {
-      throw new Error('The trivia databases returned no questions for those choices. Try another category or difficulty.');
+    if (!groups.length && !local.length && !custom) {
+      throw new Error('Open Trivia DB returned no questions for those choices. Try another category or difficulty.');
     }
-    groups.push(...byCategory.values());
     titles.push(...online.map((c) => c.title));
   }
   for (const pack of local) {

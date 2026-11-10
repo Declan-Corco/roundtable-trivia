@@ -181,6 +181,18 @@ for d in "${PACK_DIRS[@]}"; do
   find "$INSTALL_DIR/server/$d" -name '*.json' -exec sed -i 's/\r$//' {} + 2>/dev/null || true
 done
 
+# Sample trivia sets from older versions (Trivia now uses Open Trivia DB). Each is removed only if
+# it's exactly as shipped, so a sample you edited is kept.
+RETIRED_SAMPLES=(
+  "general-knowledge.json be42a634aa274798c078f5b25bb1bdc50be73fed019dc535e9a69c550b66abf9"
+  "geography.json 27b3ad9f78d6a1411958e7f369139995b091e2266631c29fe2d7ac34fed3701a"
+  "science.json cd7163ccf0b07118984fd0e9c50d299e09a97e0bfed31b260b3faa894b8a2e9f"
+)
+for entry in "${RETIRED_SAMPLES[@]}"; do
+  f="$INSTALL_DIR/server/trivia/${entry%% *}"
+  if [[ -f "$f" && "$(sha256sum "$f" | cut -c1-64)" == "${entry##* }" ]]; then rm -f "$f"; fi
+done
+
 echo "  Installing dependencies (npm)…"
 cd "$INSTALL_DIR/server"
 if [[ -f package-lock.json ]]; then npm ci --omit=dev --no-audit --no-fund --loglevel=error

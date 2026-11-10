@@ -519,34 +519,8 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .source { display: flex; flex-direction: column; gap: 10px; }
 .source-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .source-head strong { font-size: 1.05rem; font-weight: 650; }
-.source-head a { color: inherit; }
-.live {
-  background: var(--teal);
-  color: var(--tile-ink);
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 999px;
-  align-self: center;
-}
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip {
-  border: 2px solid transparent;
-  background: var(--white);
-  border-radius: 999px;
-  padding: 8px 16px;
-  font-weight: 600;
-  font-size: 0.98rem;
-  color: var(--brown-900);
-  cursor: pointer;
-  box-shadow: 0 2px 6px -2px rgba(74, 44, 29, 0.25);
-  transition: background 0.15s, border-color 0.15s, transform 0.1s;
-}
-.chip:hover { transform: translateY(-1px); }
-.chip.on { background: var(--teal); color: var(--tile-ink); }
-.chip.on::before { content: "✓ "; }
+.credit-line { margin: 2px 0 0; font-size: 0.85rem; color: var(--muted); }
+.credit-line a { color: inherit; }
 
 /* Credit for questions from online databases */
 .q-credit { font-size: 0.85rem; font-weight: 500; opacity: 0.85; text-align: center; flex: 1; }
