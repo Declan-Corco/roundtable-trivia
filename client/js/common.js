@@ -1,12 +1,7 @@
 // Helpers shared by the host screen and the player screen.
 (function () {
-  const SHAPES = [
-    '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 L29.5 27 H2.5 Z"/></svg>', // triangle
-    '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2 L30 16 L16 30 L2 16 Z"/></svg>', // diamond
-    '<svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="13.5"/></svg>', // circle
-    '<svg viewBox="0 0 32 32" aria-hidden="true"><rect x="4" y="4" width="24" height="24" rx="2"/></svg>', // square
-  ];
-  const SHAPE_NAMES = ['Triangle', 'Diamond', 'Circle', 'Square'];
+  /** Answers are labelled A-D (index 0-3). */
+  const LETTERS = ['A', 'B', 'C', 'D'];
 
   // ---- Brand marks (inline SVG so they inherit the page's colours) ----
   // Six seats around the table: red top/bottom, yellow on the right-top/left-bottom, teal on the others.
@@ -53,10 +48,9 @@
     return node;
   }
 
-  function shape(i) {
-    const span = el('span', { className: 'shape', title: SHAPE_NAMES[i] });
-    span.innerHTML = SHAPES[i]; // static, trusted markup
-    return span;
+  /** The answer's letter (A-D), shown on its plate. */
+  function letter(i) {
+    return el('span', { className: 'letter', 'aria-hidden': 'true' }, LETTERS[i] || '?');
   }
 
   function showScreen(id) {
@@ -171,12 +165,12 @@
     document.querySelectorAll('.seats').forEach((c) => c._seatArgs && renderSeats(c, ...c._seatArgs));
   });
 
-  /** An answer card: a coloured place setting with the shape on a plate, then the answer text. */
+  /** An answer card: a coloured place setting with its letter on a plate, then the answer text. */
   function answerCard(i, text, tag = 'div', props = {}) {
     return el(
       tag,
       { className: 'answer', dataset: { i }, ...props },
-      el('span', { className: 'plate' }, shape(i)),
+      el('span', { className: 'plate' }, letter(i)),
       el('span', { className: 'label' }, text)
     );
   }
@@ -228,5 +222,5 @@
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   };
 
-  window.RT = { $, el, shape, showScreen, request, countdown, toast, watchConnection, storage, ordinal, SHAPE_NAMES, MARK_SVG, drainBar, drainRing, seatColor, renderSeats, answerCard };
+  window.RT = { $, el, letter, showScreen, request, countdown, toast, watchConnection, storage, ordinal, LETTERS, MARK_SVG, drainBar, drainRing, seatColor, renderSeats, answerCard };
 })();

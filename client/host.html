@@ -18,18 +18,45 @@
     </div>
   </header>
 
-  <!-- 1. Pick a trivia set -->
+  <!-- 1a. Pick a game -->
   <section class="screen" id="screen-setup">
     <div class="setup">
-      <h1>Set the table</h1>
-      <p class="muted">Pick a trivia set, or upload your own <code>.json</code> file.</p>
-      <div class="set-grid" id="set-list"></div>
-      <div class="set-errors" id="set-errors"></div>
+      <span class="tagline">Set the table</span>
+      <h1>Pick a game</h1>
+      <div class="game-grid" id="game-list"></div>
+      <p class="error" id="setup-error"></p>
+    </div>
+  </section>
+
+  <!-- 1b. The chosen game's categories and settings -->
+  <section class="screen" id="screen-settings" hidden>
+    <div class="setup">
+      <button class="back-link" id="back-to-games" type="button">← All games</button>
+      <div class="settings-head">
+        <h1 id="settings-title"></h1>
+        <p class="muted" id="settings-desc"></p>
+      </div>
+
+      <div class="settings-block">
+        <div class="block-head">
+          <h2>Categories</h2>
+          <span class="muted" id="pack-hint">Pick one or more to mix them.</span>
+        </div>
+        <div class="set-grid" id="set-list"></div>
+        <div class="set-errors" id="set-errors"></div>
+      </div>
+
+      <div class="settings-block">
+        <div class="block-head"><h2>Settings</h2></div>
+        <div class="settings-grid" id="settings-list"></div>
+      </div>
+
       <div class="setup-actions">
+        <span class="round-summary" id="round-summary"></span>
         <input class="input" type="password" id="host-password" placeholder="Host password" autocomplete="current-password" hidden>
         <button class="btn btn-primary btn-big" id="create-btn" type="button" disabled>Open the lobby</button>
       </div>
-      <p class="error" id="setup-error"></p>
+      <p class="error" id="settings-error"></p>
     </div>
   </section>
 

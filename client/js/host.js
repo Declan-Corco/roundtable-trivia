@@ -8,12 +8,13 @@
   const socket = io();
   watchConnection(socket);
 
-  let selected = null; // { type: 'server', id } | { type: 'upload', data, title }
+  const PREFS_KEY = 'rt_host_prefs'; // last categories/settings per game, so hosts don't redo them
   let current = null; // last state received from the server
   let stopTimer = null;
-  let serverConfig = { needsPassword: false, allowUploads: true };
+  let catalog = []; // games offered by the server (/api/games)
+  let choice = null; // { game, packs: Set<id>, upload: { data, title, count } | null, settings: {} }
 
-  // ------------------------------------------------------------- setup
+  // ------------------------------------------------------------- setup: 1. pick a game
 
   async function showSetup() {
     current = null;
@@ -24,95 +25,207 @@
     try {
       const [cfg, data] = await Promise.all([
         fetch('/api/config').then((r) => r.json()),
-        fetch('/api/sets').then((r) => r.json()),
+        fetch('/api/games').then((r) => r.json()),
       ]);
-      serverConfig = cfg;
       $('#host-password').hidden = !cfg.needsPassword;
-      renderSets(data.sets);
-      $('#set-errors').replaceChildren(...data.errors.map((e) => el('div', {}, `⚠ Skipped ${e}`)));
+      catalog = data.games;
+      renderGames();
     } catch {
-      $('#setup-error').textContent = 'Could not load trivia sets from the server.';
+      $('#setup-error').textContent = 'Could not load the games from the server.';
     }
   }
 
-  function renderSets(sets) {
-    const cards = sets.map((s) =>
+  function renderGames() {
+    $('#game-list').replaceChildren(
+      ...catalog.map((g) =>
+        el(
+          'button',
+          { type: 'button', className: `game-card game-${g.id}`, onclick: () => openGame(g.id) },
+          gameArt(g),
+          el(
+            'div',
+            { className: 'game-text' },
+            el('strong', {}, g.name),
+            el('span', { className: 'desc' }, g.tagline),
+            el('span', { className: 'count' }, `${g.packs.length} categor${g.packs.length === 1 ? 'y' : 'ies'}`)
+          ),
+          el('span', { className: 'go', 'aria-hidden': 'true' }, '→')
+        )
+      )
+    );
+  }
+
+  /** A little picture for each game card. */
+  function gameArt(g) {
+    const art = el('div', { className: 'game-art', 'aria-hidden': 'true' });
+    if (g.mode === 'majority') {
+      // Most of the table on one colour
+      ['teal', 'teal', 'red', 'teal', 'yellow', 'teal'].forEach((c) => art.append(el('span', { className: `dot s-${c}` })));
+    } else {
+      RT.LETTERS.forEach((L, i) => art.append(el('span', { className: 'mini-tile', dataset: { i } }, L)));
+    }
+    return art;
+  }
+
+  // ------------------------------------------------------------- setup: 2. categories & settings
+
+  function openGame(id) {
+    const game = catalog.find((g) => g.id === id);
+    if (!game) return;
+    const saved = (storage.get(localStorage, PREFS_KEY) || {})[id] || {};
+    const known = new Set(game.packs.map((p) => p.id));
+    const packs = new Set((saved.packs || []).filter((p) => known.has(p)));
+    if (!packs.size && game.packs[0]) packs.add(game.packs[0].id);
+    const settings = {};
+    for (const s of game.settings) {
+      const v = saved.settings?.[s.id];
+      settings[s.id] = s.options.some((o) => o.value === v) ? v : s.default;
+    }
+    choice = { game, packs, upload: null, settings };
+
+    $('#settings-title').textContent = game.name;
+    $('#settings-desc').textContent = game.description;
+    $('#settings-error').textContent = '';
+    $('#set-errors').replaceChildren(...game.errors.map((e) => el('div', {}, `⚠ Skipped ${e}`)));
+    renderPacks();
+    renderSettings();
+    updateSummary();
+    showScreen('screen-settings');
+  }
+
+  function renderPacks() {
+    const { game, packs, upload } = choice;
+    const toggle = (id) => {
+      if (packs.has(id)) packs.delete(id);
+      else packs.add(id);
+      renderPacks();
+      updateSummary();
+    };
+    const cards = game.packs.map((p) =>
       el(
         'button',
         {
           type: 'button',
-          className: 'set-card' + (selected?.type === 'server' && selected.id === s.id ? ' selected' : ''),
-          onclick: () => select({ type: 'server', id: s.id }),
-          dataset: { id: s.id },
+          className: 'set-card' + (packs.has(p.id) ? ' selected' : ''),
+          'aria-pressed': String(packs.has(p.id)),
+          onclick: () => toggle(p.id),
         },
-        el('strong', {}, s.title),
-        s.description ? el('span', { className: 'desc' }, s.description) : null,
-        el('span', { className: 'count' }, `${s.count} questions`)
+        el('span', { className: 'tick' }, '✓'),
+        el('strong', {}, p.title),
+        p.description ? el('span', { className: 'desc' }, p.description) : null,
+        el('span', { className: 'count' }, `${p.count} questions`)
       )
     );
-
-    if (serverConfig.allowUploads) {
-      const input = el('input', { type: 'file', accept: '.json,application/json', onchange: onUpload });
+    if (game.allowUpload) {
       cards.push(
         el(
           'label',
-          { className: 'set-card upload' + (selected?.type === 'upload' ? ' selected' : ''), id: 'upload-card' },
-          input,
-          el('strong', { id: 'upload-title' }, selected?.type === 'upload' ? selected.title : '⬆ Upload a trivia file'),
-          el(
-            'span',
-            { className: 'desc', id: 'upload-desc' },
-            selected?.type === 'upload' ? `${selected.data.questions.length} questions · click to change` : '.json — see trivia/README.md'
-          )
+          { className: 'set-card upload' + (upload ? ' selected' : '') },
+          el('input', { type: 'file', accept: '.json,application/json', onchange: onUpload }),
+          el('span', { className: 'tick' }, '✓'),
+          el('strong', {}, upload ? upload.title : '⬆ Upload your own'),
+          el('span', { className: 'desc' }, upload ? `${upload.count} questions · click to change` : 'A .json file (see the README)'),
+          upload
+            ? el(
+                'button',
+                {
+                  type: 'button',
+                  className: 'link-btn',
+                  onclick: (e) => {
+                    e.preventDefault();
+                    choice.upload = null;
+                    renderPacks();
+                    updateSummary();
+                  },
+                },
+                'Remove'
+              )
+            : null
         )
       );
     }
     $('#set-list').replaceChildren(...cards);
-    if (!selected && sets[0]) select({ type: 'server', id: sets[0].id });
-    $('#create-btn').disabled = !selected;
   }
 
-  function select(choice) {
-    selected = choice;
-    document.querySelectorAll('.set-card').forEach((c) => {
-      const isUpload = c.id === 'upload-card';
-      c.classList.toggle('selected', isUpload ? choice.type === 'upload' : choice.type === 'server' && c.dataset.id === choice.id);
-    });
-    $('#create-btn').disabled = !selected;
+  function renderSettings() {
+    $('#settings-list').replaceChildren(
+      ...choice.game.settings.map((s) =>
+        el(
+          'div',
+          { className: 'setting' },
+          el('span', { className: 'setting-label' }, s.label),
+          el(
+            'div',
+            { className: 'seg', role: 'group', 'aria-label': s.label },
+            ...s.options.map((o) =>
+              el(
+                'button',
+                {
+                  type: 'button',
+                  className: o.value === choice.settings[s.id] ? 'on' : '',
+                  'aria-pressed': String(o.value === choice.settings[s.id]),
+                  onclick: () => {
+                    choice.settings[s.id] = o.value;
+                    renderSettings();
+                    updateSummary();
+                  },
+                },
+                o.label
+              )
+            )
+          )
+        )
+      )
+    );
+  }
+
+  function updateSummary() {
+    const { game, packs, upload, settings } = choice;
+    const available = game.packs.filter((p) => packs.has(p.id)).reduce((n, p) => n + p.count, 0) + (upload?.count || 0);
+    const playing = settings.count ? Math.min(settings.count, available) : available;
+    $('#round-summary').textContent = available
+      ? `${playing} question${playing === 1 ? '' : 's'}${playing < available ? ` from ${available}` : ''}`
+      : 'Pick at least one category';
+    $('#create-btn').disabled = !available;
   }
 
   async function onUpload(e) {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
-    $('#setup-error').textContent = '';
+    $('#settings-error').textContent = '';
     try {
       if (file.size > 900_000) throw new Error('That file is too large (max ~900 KB).');
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.questions) || !data.questions.length) throw new Error('The file has no "questions" array.');
-      const title = data.title || file.name.replace(/\.json$/i, '');
-      selected = { type: 'upload', data, title };
-      $('#upload-title').textContent = title;
-      $('#upload-desc').textContent = `${data.questions.length} questions · click to change`;
-      select(selected);
+      choice.upload = { data, title: data.title || file.name.replace(/\.json$/i, ''), count: data.questions.length };
+      renderPacks();
+      updateSummary();
     } catch (err) {
-      $('#setup-error').textContent = err instanceof SyntaxError ? `That file is not valid JSON: ${err.message}` : err.message;
+      $('#settings-error').textContent = err instanceof SyntaxError ? `That file is not valid JSON: ${err.message}` : err.message;
     }
   }
 
+  $('#back-to-games').addEventListener('click', () => showScreen('screen-setup'));
+
   $('#create-btn').addEventListener('click', async () => {
-    if (!selected) return;
+    if (!choice) return;
     const btn = $('#create-btn');
     btn.disabled = true;
-    $('#setup-error').textContent = '';
+    $('#settings-error').textContent = '';
+    const prefs = storage.get(localStorage, PREFS_KEY) || {};
+    prefs[choice.game.id] = { packs: [...choice.packs], settings: choice.settings };
+    storage.set(localStorage, PREFS_KEY, prefs);
     const res = await request(socket, 'host:create', {
-      setId: selected.type === 'server' ? selected.id : undefined,
-      customSet: selected.type === 'upload' ? selected.data : undefined,
+      game: choice.game.id,
+      packs: [...choice.packs],
+      customSet: choice.upload?.data,
+      settings: choice.settings,
       password: $('#host-password').value,
     });
     btn.disabled = false;
     if (!res.ok) {
-      $('#setup-error').textContent = res.error;
+      $('#settings-error').textContent = res.error;
       return;
     }
     storage.set(sessionStorage, SESSION_KEY, { pin: res.pin, token: res.token });
@@ -187,7 +300,7 @@
     $('#join-url').textContent = s.joinUrl.replace(/^https?:\/\//, '').replace(/\/(join)?\?pin=\d+$/, '');
     $('#lobby-pin').textContent = s.pin.replace(/(\d{3})(\d{3})/, '$1 $2');
     $('#qr').src = s.qr;
-    $('#lobby-title').textContent = s.title;
+    $('#lobby-title').textContent = `${s.gameName} · ${s.title}`;
     $('#lock-btn').textContent = s.locked ? '🔒 Locked' : 'Lock';
     showScreen('screen-lobby');
     renderGuests(s.players, s.tableSize);
@@ -239,7 +352,7 @@
   // ---- Intro
 
   function renderIntro(s) {
-    $('#intro-counter').textContent = `Question ${s.index + 1} of ${s.total}`;
+    $('#intro-counter').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
     $('#intro-question').textContent = s.question;
     $('#intro-double').hidden = s.points !== 'double';
     showScreen('screen-intro');
@@ -251,7 +364,8 @@
   function renderQuestion(s, reveal) {
     const stage = $('#q-stage');
     stage.classList.toggle('revealed', reveal);
-    $('#q-progress').textContent = `Question ${s.index + 1} of ${s.total}` + (s.points === 'double' ? ' · double points' : '');
+    $('#q-progress').textContent =
+      `${s.gameName} · Question ${s.index + 1} of ${s.total}` + (s.points === 'double' ? ' · double points' : '');
     $('#q-text').textContent = s.question;
     $('#q-pin').textContent = `Join with PIN ${s.pin}`;
     $('#q-media').replaceChildren(s.image ? el('img', { src: s.image, alt: '' }) : '');
@@ -288,7 +402,12 @@
       ring.style.transition = 'none';
       ring.style.strokeDashoffset = '0';
       timer.textContent = '✓';
-      $('#q-answered-label').textContent = `${s.correctCount} of ${s.playerCount} got it`;
+      $('#q-answered-label').textContent =
+        s.mode === 'majority'
+          ? s.correct.length
+            ? `${s.correctCount} of ${s.playerCount} went with the table`
+            : 'Nobody voted'
+          : `${s.correctCount} of ${s.playerCount} got it`;
       renderSeats(
         $('#q-seats'),
         s.seats.map((p) => ({ id: p.id, seat: p.seat, cls: p.choice == null ? 'none' : `c${p.choice}`, name: p.name, label: p.seat })),
@@ -373,7 +492,7 @@
             { className: 'block' },
             el('span', { className: 'medal' }, medals[i]),
             el('span', { className: 'pscore' }, p.score.toLocaleString()),
-            el('small', {}, `${p.correct}/${s.total} correct`)
+            el('small', {}, `${p.correct}/${s.total} ${s.mode === 'majority' ? 'with the table' : 'correct'}`)
           )
         )
       )

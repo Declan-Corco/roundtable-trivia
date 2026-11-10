@@ -1,4 +1,5 @@
-// Loads and validates trivia sets. A trivia set is a JSON file — see trivia/README.md.
+// Loads and validates question packs (trivia sets, Majority Rules packs). A pack is a JSON file —
+// see trivia/README.md. Packs for games without right answers are loaded with requireCorrect: false.
 const fs = require('fs');
 const path = require('path');
 
@@ -22,9 +23,9 @@ function cleanText(value, maxLen) {
  * Validates raw (parsed JSON) trivia data and returns a normalised set.
  * Throws an Error with a human-readable message if the data is invalid.
  */
-function validateSet(raw, fallbackTitle = 'Untitled set') {
+function validateSet(raw, fallbackTitle = 'Untitled set', { requireCorrect = true } = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw new Error('A trivia set must be a JSON object with a "questions" array.');
+    throw new Error('A question pack must be a JSON object with a "questions" array.');
   }
   const defaultTime = clampInt(raw.defaultTime, 5, 240, 20);
   if (!Array.isArray(raw.questions) || raw.questions.length === 0) {
@@ -45,12 +46,15 @@ function validateSet(raw, fallbackTitle = 'Untitled set') {
     const answers = q.answers.map((a) => cleanText(a, 120));
     if (answers.some((a) => !a)) throw new Error(`Question ${n}: answers cannot be empty.`);
 
-    const rawCorrect = Array.isArray(q.correct) ? q.correct : [q.correct];
-    const correct = [...new Set(rawCorrect.map(Number))];
-    if (!correct.length || correct.some((c) => !Number.isInteger(c) || c < 0 || c >= answers.length)) {
-      throw new Error(
-        `Question ${n}: "correct" must be the index of the right answer (0-${answers.length - 1}), or an array of indexes.`
-      );
+    let correct = [];
+    if (requireCorrect) {
+      const rawCorrect = Array.isArray(q.correct) ? q.correct : [q.correct];
+      correct = [...new Set(rawCorrect.map(Number))];
+      if (!correct.length || correct.some((c) => !Number.isInteger(c) || c < 0 || c >= answers.length)) {
+        throw new Error(
+          `Question ${n}: "correct" must be the index of the right answer (0-${answers.length - 1}), or an array of indexes.`
+        );
+      }
     }
 
     const image =
@@ -75,21 +79,21 @@ function validateSet(raw, fallbackTitle = 'Untitled set') {
   };
 }
 
-/** Reads every *.json file in the trivia folder. Invalid files are skipped and reported. */
-function loadSets(dir) {
+/** Reads every *.json file in a pack folder. Invalid files are skipped and reported. */
+function loadSets(dir, options = {}) {
   const sets = new Map();
   const errors = [];
   let files = [];
   try {
     files = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.json'));
   } catch (err) {
-    errors.push(`Cannot read trivia folder ${dir}: ${err.message}`);
+    errors.push(`Cannot read folder ${dir}: ${err.message}`);
   }
   for (const file of files.sort()) {
     const id = path.basename(file, path.extname(file));
     try {
       const raw = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
-      sets.set(id, { id, ...validateSet(raw, id) });
+      sets.set(id, { id, ...validateSet(raw, id, options) });
     } catch (err) {
       errors.push(`${file}: ${err.message}`);
     }

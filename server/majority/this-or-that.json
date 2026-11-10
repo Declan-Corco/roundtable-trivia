@@ -1,0 +1,19 @@
+{
+  "title": "This or That",
+  "description": "Everyday dilemmas. Side with the room.",
+  "defaultTime": 15,
+  "questions": [
+    { "question": "Beach holiday or mountain cabin?", "answers": ["Beach", "Mountains"] },
+    { "question": "Cats or dogs?", "answers": ["Cats", "Dogs", "Both", "Neither"] },
+    { "question": "Are you a morning person or a night owl?", "answers": ["Morning person", "Night owl"] },
+    { "question": "Pick a superpower.", "answers": ["Flight", "Invisibility", "Teleportation", "Time travel"] },
+    { "question": "The best season is…", "answers": ["Spring", "Summer", "Autumn", "Winter"] },
+    { "question": "Best way to spend a Saturday?", "answers": ["Outdoors", "Gaming", "Sleeping in", "Out with friends"] },
+    { "question": "Movies at home or at the cinema?", "answers": ["At home", "At the cinema"] },
+    { "question": "Would you rather be able to talk to animals or speak every language?", "answers": ["Talk to animals", "Speak every language"] },
+    { "question": "Texting or calling?", "answers": ["Texting", "Calling", "Voice notes"] },
+    { "question": "Window seat or aisle seat?", "answers": ["Window", "Aisle", "Middle, somehow"] },
+    { "question": "Would you rather explore space or the deep ocean?", "answers": ["Space", "Deep ocean"] },
+    { "question": "Pick a pet you'd secretly love to own.", "answers": ["Otter", "Owl", "Capybara", "Red panda"] }
+  ]
+}

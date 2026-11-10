@@ -1,6 +1,13 @@
 # roundtable — pull up a chair
 
-A live, Kahoot-style trivia game. The **host** puts a lobby on a big screen with a QR code and game PIN, players join from their **phones**, and everyone races to tap the right answer. Faster correct answers score more.
+A live party-game night around a round table. The **host** puts a lobby on a big screen with a QR code and game PIN, and players join from their **phones** and answer **A, B, C or D**.
+
+The host picks a game first, then its categories and settings:
+
+| Game | How you score |
+|---|---|
+| **Trivia** | Pick the right answer. Faster correct answers score more. |
+| **Majority Rules** | No right answers. Pick what most of the table picks. |
 
 ```
 Roundtable/
@@ -12,13 +19,15 @@ Roundtable/
 │   ├── fonts/           ← Fredoka (SIL Open Font License), served locally
 │   └── js/              ← common.js, host.js, player.js
 └── server/              ← the backend (Node.js + Socket.IO), also serves the website
-    ├── src/             ← index.js (web server), game.js (game rules), trivia.js (set loader)
-    ├── trivia/          ← trivia sets: one .json file per set  ← add your own here
+    ├── src/             ← index.js (web server), games.js (the game list + their settings),
+    │                       game.js (shared game engine), trivia.js (question pack loader)
+    ├── trivia/          ← Trivia categories: one .json file each  ← add your own here
+    ├── majority/        ← Majority Rules categories: one .json file each
     ├── setup.sh         ← one-command Linux installer
     └── package.json
 ```
 
-**Features:** lobby with QR code + PIN · remove players · lock the lobby · "get ready" countdown · 4-colour answer tiles with shapes · speed-based scoring · answer streak bonus · double-points questions · true/false and multiple-correct questions · answer chart after each question · top-5 scoreboard · podium finish · players and the host can refresh or lose signal and rejoin automatically · works on phones, tablets and desktops · upload a trivia file straight from the host screen · optional host password.
+**Features:** lobby with QR code + PIN · remove players · lock the lobby · "get ready" countdown · a game picker with categories you can mix, and settings (question count, timer, order) · 4-colour A/B/C/D answer tiles · speed-based scoring · answer streak bonus · double-points questions · true/false and multiple-correct questions · answer chart after each question · top-5 scoreboard · podium finish · players and the host can refresh or lose signal and rejoin automatically · works on phones, tablets and desktops · upload a trivia file straight from the host screen · optional host password.
 
 ---
 
@@ -203,9 +212,16 @@ There's no router to configure.
 
 ---
 
-## 4. Make your own trivia sets
+## 4. Make your own categories
 
-Drop a `.json` file in `server/trivia/` (or `/opt/roundtable/server/trivia/` on an installed server). It appears on the host screen next time the page loads. Hosts can also **upload a .json file** right from the host screen.
+Each game's categories are `.json` files in its own folder:
+
+| Game | Folder (in the repo) | Folder (on an installed server) |
+|---|---|---|
+| Trivia | `server/trivia/` | `/opt/roundtable/server/trivia/` |
+| Majority Rules | `server/majority/` | `/opt/roundtable/server/majority/` |
+
+A new file appears on the host screen the next time the page loads. Hosts can also **upload a .json file** right from the game's settings page. On that page the host can tick several categories to mix them into one game.
 
 ```json
 {
@@ -224,7 +240,18 @@ Drop a `.json` file in `server/trivia/` (or `/opt/roundtable/server/trivia/` on 
 - Optional per question: `time` (seconds), `points` (`"standard"`, `"double"` or `"none"`), and `image` (an `https://` URL or `/media/file.png` placed in `trivia/media/`).
 - A file with a mistake is skipped. The host screen tells you which file and which question is wrong.
 
-Full details are in [server/trivia/README.md](server/trivia/README.md).
+Full details are in [server/trivia/README.md](server/trivia/README.md). Majority Rules files use the same format without `correct`; see [server/majority/README.md](server/majority/README.md).
+
+### Adding a new game
+
+Games are listed in [server/src/games.js](server/src/games.js). Each entry declares:
+
+- its name and tagline
+- its scoring mode (`correct` or `majority`)
+- its categories folder
+- its settings (each a list of choices)
+
+The host screen builds the game card and the settings page from that list automatically. A game that plays as A/B/C/D questions only needs a new entry and a folder of packs. A game with a new way of scoring needs a new `mode` in `winningAnswers()` in [server/src/game.js](server/src/game.js).
 
 ---
 

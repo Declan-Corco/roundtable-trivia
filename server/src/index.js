@@ -9,7 +9,7 @@ const { Server } = require('socket.io');
 const QRCode = require('qrcode');
 
 const config = require('./config');
-const { loadSets, validateSet } = require('./trivia');
+const { listGames, buildRound } = require('./games');
 const { Game } = require('./game');
 
 const app = express();
@@ -71,17 +71,10 @@ app.get('/api/config', (_req, res) => {
   res.json({ needsPassword: !!config.HOST_PASSWORD, allowUploads: config.ALLOW_UPLOADS });
 });
 
-app.get('/api/sets', (_req, res) => {
-  const { sets, errors } = loadSets(config.TRIVIA_DIR);
-  res.json({
-    sets: [...sets.values()].map((s) => ({
-      id: s.id,
-      title: s.title,
-      description: s.description,
-      count: s.questions.length,
-    })),
-    errors,
-  });
+// The games a host can pick, with their categories and settings (packs are re-read every time,
+// so new .json files show up without a restart).
+app.get('/api/games', (_req, res) => {
+  res.json({ games: listGames() });
 });
 
 // Apple universal links: lets the iOS app open /join links (e.g. from the QR code) directly.
@@ -175,20 +168,14 @@ io.on('connection', (socket) => {
 
   socket.on(
     'host:create',
-    handler(async ({ setId, customSet, password }) => {
+    handler(async ({ game: gameId, packs, customSet, settings, password }) => {
       if (config.HOST_PASSWORD && !safeEqual(password || '', config.HOST_PASSWORD)) {
         throw new Error('Wrong host password.');
       }
       if (games.size >= config.MAX_GAMES) throw new Error('The server is busy. Try again later.');
 
-      let set;
-      if (customSet) {
-        if (!config.ALLOW_UPLOADS) throw new Error('Uploading trivia files is disabled on this server.');
-        set = validateSet(customSet, 'Uploaded set');
-      } else {
-        set = loadSets(config.TRIVIA_DIR).sets.get(String(setId));
-        if (!set) throw new Error('That trivia set no longer exists. Refresh the page.');
-      }
+      // The chosen game + categories + settings → the questions for this round (see games.js).
+      const { game: def, round: set } = buildRound({ game: gameId, packs, customSet, settings });
 
       const pin = newPin();
       const joinUrl = `${baseUrlFor(socket)}/join?pin=${pin}`;
@@ -197,6 +184,9 @@ io.on('connection', (socket) => {
         io,
         pin,
         set,
+        gameId: def.id,
+        gameName: def.name,
+        mode: def.mode,
         joinUrl,
         qr,
         maxPlayers: config.MAX_PLAYERS,
@@ -204,7 +194,7 @@ io.on('connection', (socket) => {
       });
       games.set(pin, game);
       game.attachHost(socket);
-      console.log(`[game ${pin}] created — "${set.title}" (${set.questions.length} questions)`);
+      console.log(`[game ${pin}] created — ${def.name}: "${set.title}" (${set.questions.length} questions)`);
       return { pin, token: game.hostToken };
     })
   );
@@ -293,15 +283,16 @@ setInterval(() => {
 // --------------------------------------------------------------- start
 
 server.listen(config.PORT, config.HOST, () => {
-  const { sets, errors } = loadSets(config.TRIVIA_DIR);
   const lan = lanAddress();
   console.log('');
-  console.log('  Roundtable Trivia is running');
+  console.log('  roundtable is running');
   console.log(`  Host screen:  http://localhost:${config.PORT}/host`);
   if (lan) console.log(`  On your LAN:  http://${lan}:${config.PORT}/host`);
   if (config.PUBLIC_URL) console.log(`  Public URL:   ${config.PUBLIC_URL}/host`);
-  console.log(`  Trivia sets:  ${sets.size} loaded from ${config.TRIVIA_DIR}`);
-  for (const e of errors) console.warn(`  ! Skipped ${e}`);
+  for (const g of listGames()) {
+    console.log(`  ${(g.name + ':').padEnd(17)}${g.packs.length} categories`);
+    for (const e of g.errors) console.warn(`  ! Skipped ${e}`);
+  }
   console.log('');
 });
 

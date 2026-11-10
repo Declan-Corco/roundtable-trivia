@@ -14,10 +14,14 @@ const RECONNECT_GRACE_MS = 15 * 1000; // a question won't end early while a play
 const newToken = () => crypto.randomBytes(18).toString('base64url');
 
 class Game {
-  constructor({ io, pin, set, joinUrl, qr, maxPlayers, onDispose }) {
+  constructor({ io, pin, set, gameId = 'trivia', gameName = 'Trivia', mode = 'correct', joinUrl, qr, maxPlayers, onDispose }) {
     this.io = io;
     this.pin = pin;
     this.set = set;
+    this.gameId = gameId;
+    this.gameName = gameName;
+    this.mode = mode; // 'correct' (trivia) | 'majority' — see games.js
+    this.lastCorrect = [];
     this.joinUrl = joinUrl;
     this.qr = qr;
     this.maxPlayers = maxPlayers;
@@ -313,20 +317,28 @@ class Game {
     if (active.length > 0 && active.every((p) => p.answer)) this.reveal();
   }
 
+  /** The answer indexes that score this question. Ties in Majority Rules all count. */
+  winningAnswers(q, counts) {
+    if (this.mode !== 'majority') return q.correct;
+    const top = Math.max(0, ...counts);
+    return top === 0 ? [] : counts.flatMap((c, i) => (c === top ? [i] : []));
+  }
+
   reveal() {
     if (this.state !== 'question') return;
     clearTimeout(this.timer);
     const q = this.question;
     const limitMs = q.time * 1000;
     const counts = new Array(q.answers.length).fill(0);
+    for (const p of this.players.values()) if (p.answer) counts[p.answer.index] += 1;
+
+    // Which answers score: the right ones (trivia), or the most popular ones (Majority Rules).
+    const winning = this.winningAnswers(q, counts);
+    this.lastCorrect = winning;
 
     for (const p of this.players.values()) {
       let points = 0;
-      let correct = false;
-      if (p.answer) {
-        counts[p.answer.index] += 1;
-        correct = q.correct.includes(p.answer.index);
-      }
+      const correct = Boolean(p.answer && winning.includes(p.answer.index));
       if (correct) {
         p.streak += 1;
         p.correctCount += 1;
@@ -342,7 +354,7 @@ class Game {
       }
       p.score += points;
       p.lastPoints = points;
-      p.lastResult = { answered: !!p.answer, correct, points, streak: p.streak };
+      p.lastResult = { answered: !!p.answer, correct, points, streak: p.streak, mode: this.mode };
     }
 
     // Rank before this question, so the standings can show who moved up or down.
@@ -413,7 +425,15 @@ class Game {
 
   sendHostState() {
     const q = this.question;
-    const common = { pin: this.pin, title: this.set.title, index: this.qIndex, total: this.total };
+    const common = {
+      pin: this.pin,
+      title: this.set.title,
+      game: this.gameId,
+      gameName: this.gameName,
+      mode: this.mode,
+      index: this.qIndex,
+      total: this.total,
+    };
     let payload;
     switch (this.state) {
       case 'lobby':
@@ -453,10 +473,10 @@ class Game {
           question: q.question,
           image: q.image,
           answers: q.answers,
-          correct: q.correct,
+          correct: this.lastCorrect,
           counts: this.lastCounts,
           answered: this.lastCounts.reduce((a, b) => a + b, 0),
-          correctCount: q.correct.reduce((sum, i) => sum + (this.lastCounts[i] || 0), 0),
+          correctCount: this.lastCorrect.reduce((sum, i) => sum + (this.lastCounts[i] || 0), 0),
           playerCount: this.players.size,
           isLast: this.isLastQuestion,
           seats: this.seatList(true),
@@ -494,7 +514,16 @@ class Game {
   }
 
   playerBase(p) {
-    return { pin: this.pin, name: p.name, seat: p.seat, score: p.score, index: this.qIndex, total: this.total };
+    return {
+      pin: this.pin,
+      name: p.name,
+      seat: p.seat,
+      score: p.score,
+      index: this.qIndex,
+      total: this.total,
+      mode: this.mode,
+      gameName: this.gameName,
+    };
   }
 
   sendPlayerState(p) {

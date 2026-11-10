@@ -1,6 +1,6 @@
 // Player screen: join with a PIN + nickname, then use the phone as an answer controller.
 (() => {
-  const { $, el, shape, showScreen, request, countdown, toast, watchConnection, storage, ordinal } = window.RT;
+  const { $, el, showScreen, request, countdown, toast, watchConnection, storage, ordinal } = window.RT;
   const SESSION_KEY = 'rt_player_session';
   const socket = io();
   watchConnection(socket);
@@ -121,11 +121,11 @@
         $('#lobby-seat').textContent = `Seat ${s.seat}`;
         $('#lobby-seat').className = `pc-seat s-${RT.seatColor(s.seat)}`;
         $('#lobby-name').textContent = s.name;
-        $('#lobby-title').textContent = s.title;
+        $('#lobby-title').textContent = `${s.gameName} · ${s.title}`;
         return showScreen('screen-lobby');
 
       case 'intro': {
-        $('#intro-counter').textContent = `Question ${s.index + 1} of ${s.total}`;
+        $('#intro-counter').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
         $('#intro-double').hidden = s.points !== 'double';
         showScreen('screen-intro');
         RT.drainBar($('#intro-progress'), s.timeLeft, 4000);
@@ -150,7 +150,7 @@
         $('#final-rank').textContent = ordinal(s.rank);
         $('#final-detail').textContent =
           `out of ${s.playerCount} player${s.playerCount === 1 ? '' : 's'} · ${s.score.toLocaleString()} points · ` +
-          `${s.correctCount}/${s.total} correct` +
+          `${s.correctCount}/${s.total} ${s.mode === 'majority' ? 'with the table' : 'correct'}` +
           (s.rank === 1 ? ' 🏆' : s.rank <= 3 ? ' 🎉' : '');
         clearSession();
         inGame = true; // keep showing this screen until they choose to leave
@@ -166,7 +166,7 @@
     list.className = `p-answers count-${s.answers.length}`;
     list.replaceChildren(
       ...s.answers.map((text, i) =>
-        RT.answerCard(i, text, 'button', { type: 'button', 'aria-label': `${RT.SHAPE_NAMES[i]}: ${text}`, onclick: () => answer(i, text) })
+        RT.answerCard(i, text, 'button', { type: 'button', 'aria-label': `${RT.LETTERS[i]}: ${text}`, onclick: () => answer(i, text) })
       )
     );
     const timer = $('#p-timer');
@@ -203,10 +203,10 @@
       $('#result-title').textContent = "Time's up!";
     } else if (s.correct) {
       icon.textContent = '✓';
-      $('#result-title').textContent = 'Correct!';
+      $('#result-title').textContent = s.mode === 'majority' ? 'With the table!' : 'Correct!';
     } else {
       icon.textContent = '✗';
-      $('#result-title').textContent = 'Incorrect';
+      $('#result-title').textContent = s.mode === 'majority' ? 'Against the table' : 'Incorrect';
     }
     $('#result-points').textContent = `+${s.points.toLocaleString()}`;
     $('#result-streak').textContent = s.streak >= 2 ? `🔥 Answer streak: ${s.streak}` : '';

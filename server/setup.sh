@@ -159,7 +159,8 @@ NODE_BIN="$(command -v node)"
 # ----------------------------------------------------------------------------- app files
 step "Installing the app to ${INSTALL_DIR}"
 id -u "$APP" &>/dev/null || useradd --system --user-group --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin "$APP"
-mkdir -p "$INSTALL_DIR/server/trivia"
+PACK_DIRS=(trivia majority) # question packs for each game (see server/src/games.js)
+for d in "${PACK_DIRS[@]}"; do mkdir -p "$INSTALL_DIR/server/$d"; done
 
 if [[ "$(realpath "$SRC_ROOT")" != "$(realpath "$INSTALL_DIR")" ]]; then
   rm -rf "$INSTALL_DIR/client" "$INSTALL_DIR/server/src"
@@ -168,13 +169,17 @@ if [[ "$(realpath "$SRC_ROOT")" != "$(realpath "$INSTALL_DIR")" ]]; then
   cp "$SRC_ROOT/server/package.json" "$INSTALL_DIR/server/"
   [[ -f "$SRC_ROOT/server/package-lock.json" ]] && cp "$SRC_ROOT/server/package-lock.json" "$INSTALL_DIR/server/"
   cp "$SRC_ROOT/server/setup.sh" "$INSTALL_DIR/server/"
-  # Trivia sets: add/update the shipped ones, never delete sets you added on the server.
-  cp -r "$SRC_ROOT/server/trivia/." "$INSTALL_DIR/server/trivia/"
+  # Question packs: add/update the shipped ones, never delete packs you added on the server.
+  for d in "${PACK_DIRS[@]}"; do
+    if [[ -d "$SRC_ROOT/server/$d" ]]; then cp -r "$SRC_ROOT/server/$d/." "$INSTALL_DIR/server/$d/"; fi
+  done
 fi
 mkdir -p "$INSTALL_DIR/server/trivia/media"
 
 # Fix Windows line endings if the files were edited on Windows.
-find "$INSTALL_DIR/server/trivia" -name '*.json' -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+for d in "${PACK_DIRS[@]}"; do
+  find "$INSTALL_DIR/server/$d" -name '*.json' -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+done
 
 echo "  Installing dependencies (npm)…"
 cd "$INSTALL_DIR/server"
@@ -317,7 +322,8 @@ echo "${c_green}${c_bold}=====================================================${
 [[ -n "$LAN_IP" ]] && echo "  On your network:  ${c_bold}http://${LAN_IP}:${PORT}/host${c_off}"
 [[ -n "$FINAL_URL" ]] && echo "  Public address:   ${c_bold}${FINAL_URL}/host${c_off}"
 echo
-echo "  Trivia sets:   ${INSTALL_DIR}/server/trivia/  (drop .json files here)"
+echo "  Trivia sets:   ${INSTALL_DIR}/server/trivia/    (drop .json files here)"
+echo "  Majority Rules packs: ${INSTALL_DIR}/server/majority/"
 echo "  Settings:      ${ENV_FILE}"
 echo "  View logs:     sudo journalctl -u ${APP} -f"
 echo "  Restart:       sudo systemctl restart ${APP}"
