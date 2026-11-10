@@ -6,7 +6,7 @@ The host picks a game first, then its categories and settings:
 
 | Game | How you score |
 |---|---|
-| **Trivia** | Pick the right answer. Faster correct answers score more. |
+| **Trivia** | Pick the right answer. Faster correct answers score more. Questions come live from public trivia databases (see below), or from your own files. |
 | **Majority Rules** | No right answers. Pick what most of the table picks. |
 
 ```
@@ -212,7 +212,27 @@ There's no router to configure.
 
 ---
 
-## 4. Make your own categories
+## 4. Where trivia questions come from
+
+When a host opens a Trivia lobby, the server fetches questions live from two free public databases:
+
+| Database | Categories | License |
+|---|---|---|
+| [Open Trivia DB](https://opentdb.com) | 24 (General Knowledge, Science & Nature, Geography, History, Film, Music, …) | [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/) |
+| [The Trivia API](https://the-trivia-api.com) | 10 (General Knowledge, Science, History, Food & Drink, …) | [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) (non-commercial use only) |
+
+- Hosts pick categories from either database, or mix them, and can set the **Difficulty** (Mixed, Easy, Medium or Hard).
+- Each online question shows a small credit line on the host screen (for example "Open Trivia DB · CC BY-SA 4.0"), as both licenses require.
+- Open Trivia DB allows **one request every 5 seconds**, and each of its categories needs its own request. A lobby that mixes several of its categories therefore takes a few seconds to open, and the button shows "Fetching questions…" meanwhile.
+- The server uses an Open Trivia DB session token, so the same question doesn't come up twice in a few hours.
+- **The server needs internet access** for online categories. If a database can't be reached, the host sees a clear error and can pick a category stored on the server instead.
+- The Trivia API's free questions are licensed for **non-commercial use only**. To use roundtable commercially (for example charging for game nights), take The Trivia API categories out of `server/src/sources.js` or buy one of its plans.
+
+The connectors live in [server/src/sources.js](server/src/sources.js).
+
+---
+
+## 5. Make your own categories
 
 Each game's categories are `.json` files in its own folder:
 
@@ -255,7 +275,7 @@ The host screen builds the game card and the settings page from that list automa
 
 ---
 
-## 5. Settings
+## 6. Settings
 
 On Linux they're in `/etc/roundtable.env`. When running by hand, set them as environment variables.
 
@@ -272,7 +292,7 @@ On Linux they're in `/etc/roundtable.env`. When running by hand, set them as env
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 | Problem | Fix |
 |---|---|

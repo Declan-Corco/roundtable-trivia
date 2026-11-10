@@ -61,9 +61,9 @@
   }
 
   /** Emits a Socket.IO event and resolves with the server's {ok, error, ...} reply. */
-  function request(socket, event, data) {
+  function request(socket, event, data, timeoutMs = 8000) {
     return new Promise((resolve) => {
-      socket.timeout(8000).emit(event, data || {}, (err, res) => {
+      socket.timeout(timeoutMs).emit(event, data || {}, (err, res) => {
         resolve(err ? { ok: false, error: 'The server did not respond. Check your connection.' } : res);
       });
     });

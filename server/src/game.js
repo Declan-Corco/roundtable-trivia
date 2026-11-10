@@ -455,6 +455,7 @@ class Game {
           phase: 'question',
           ...common,
           question: q.question,
+          credit: q.credit || null, // e.g. "Open Trivia DB · CC BY-SA 4.0" for online questions
           image: q.image,
           answers: q.answers,
           points: q.points,
@@ -471,6 +472,7 @@ class Game {
           phase: 'reveal',
           ...common,
           question: q.question,
+          credit: q.credit || null, // e.g. "Open Trivia DB · CC BY-SA 4.0" for online questions
           image: q.image,
           answers: q.answers,
           correct: this.lastCorrect,

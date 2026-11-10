@@ -73,8 +73,9 @@
     const game = catalog.find((g) => g.id === id);
     if (!game) return;
     const saved = (storage.get(localStorage, PREFS_KEY) || {})[id] || {};
-    const known = new Set(game.packs.map((p) => p.id));
-    const packs = new Set((saved.packs || []).filter((p) => known.has(p)));
+    const known = new Set([...game.packs.map((p) => p.id), ...game.online.flatMap((s) => s.categories.map((c) => c.id))]);
+    let packs = new Set((saved.packs || []).filter((p) => known.has(p)));
+    if (!packs.size) packs = new Set(game.defaultPacks.filter((p) => known.has(p)));
     if (!packs.size && game.packs[0]) packs.add(game.packs[0].id);
     const settings = {};
     for (const s of game.settings) {
@@ -144,7 +145,50 @@
         )
       );
     }
-    $('#set-list').replaceChildren(...cards);
+    // Online databases: one row of category chips each, credited with their license.
+    const blocks = game.online.map((src) =>
+      el(
+        'div',
+        { className: 'source' },
+        el(
+          'div',
+          { className: 'source-head' },
+          el('strong', {}, src.name),
+          el('span', { className: 'live' }, 'Live'),
+          el(
+            'span',
+            { className: 'muted' },
+            el('a', { href: src.url, target: '_blank', rel: 'noopener' }, src.url.replace(/^https?:\/\//, '')),
+            ' · ',
+            el('a', { href: src.licenseUrl, target: '_blank', rel: 'noopener' }, src.license)
+          )
+        ),
+        el(
+          'div',
+          { className: 'chips' },
+          ...src.categories.map((c) =>
+            el(
+              'button',
+              { type: 'button', className: 'chip' + (packs.has(c.id) ? ' on' : ''), 'aria-pressed': String(packs.has(c.id)), onclick: () => toggle(c.id) },
+              c.title
+            )
+          )
+        )
+      )
+    );
+    if (cards.length) {
+      blocks.push(
+        el(
+          'div',
+          { className: 'source' },
+          game.online.length
+            ? el('div', { className: 'source-head' }, el('strong', {}, 'On this server'), el('span', { className: 'muted' }, 'Your own question files. These work offline.'))
+            : null,
+          el('div', { className: 'set-grid' }, ...cards)
+        )
+      );
+    }
+    $('#set-list').replaceChildren(...blocks);
   }
 
   function renderSettings() {
@@ -153,7 +197,7 @@
         el(
           'div',
           { className: 'setting' },
-          el('span', { className: 'setting-label' }, s.label),
+          el('span', { className: 'setting-label' }, s.label, s.hint ? el('small', {}, s.hint) : null),
           el(
             'div',
             { className: 'seg', role: 'group', 'aria-label': s.label },
@@ -179,14 +223,24 @@
     );
   }
 
+  const onlineChosen = () => [...choice.packs].filter((id) => id.includes(':'));
+
   function updateSummary() {
     const { game, packs, upload, settings } = choice;
+    const online = onlineChosen().length;
     const available = game.packs.filter((p) => packs.has(p.id)).reduce((n, p) => n + p.count, 0) + (upload?.count || 0);
-    const playing = settings.count ? Math.min(settings.count, available) : available;
-    $('#round-summary').textContent = available
-      ? `${playing} question${playing === 1 ? '' : 's'}${playing < available ? ` from ${available}` : ''}`
-      : 'Pick at least one category';
-    $('#create-btn').disabled = !available;
+    let text;
+    if (online) {
+      const n = settings.count || 20;
+      text = `${n} questions · fetched live when you open the lobby`;
+    } else if (available) {
+      const playing = settings.count ? Math.min(settings.count, available) : available;
+      text = `${playing} question${playing === 1 ? '' : 's'}${playing < available ? ` from ${available}` : ''}`;
+    } else {
+      text = 'Pick at least one category';
+    }
+    $('#round-summary').textContent = text;
+    $('#create-btn').disabled = !online && !available;
   }
 
   async function onUpload(e) {
@@ -211,18 +265,27 @@
   $('#create-btn').addEventListener('click', async () => {
     if (!choice) return;
     const btn = $('#create-btn');
+    const label = btn.textContent;
     btn.disabled = true;
+    // Open Trivia DB allows one request every 5 seconds, so mixing its categories takes a moment.
+    btn.textContent = onlineChosen().length ? 'Fetching questions…' : 'Opening…';
     $('#settings-error').textContent = '';
     const prefs = storage.get(localStorage, PREFS_KEY) || {};
     prefs[choice.game.id] = { packs: [...choice.packs], settings: choice.settings };
     storage.set(localStorage, PREFS_KEY, prefs);
-    const res = await request(socket, 'host:create', {
-      game: choice.game.id,
-      packs: [...choice.packs],
-      customSet: choice.upload?.data,
-      settings: choice.settings,
-      password: $('#host-password').value,
-    });
+    const res = await request(
+      socket,
+      'host:create',
+      {
+        game: choice.game.id,
+        packs: [...choice.packs],
+        customSet: choice.upload?.data,
+        settings: choice.settings,
+        password: $('#host-password').value,
+      },
+      120000
+    );
+    btn.textContent = label;
     btn.disabled = false;
     if (!res.ok) {
       $('#settings-error').textContent = res.error;
@@ -368,6 +431,8 @@
       `${s.gameName} · Question ${s.index + 1} of ${s.total}` + (s.points === 'double' ? ' · double points' : '');
     $('#q-text').textContent = s.question;
     $('#q-pin').textContent = `Join with PIN ${s.pin}`;
+    // Online questions are credited to their database, as their licenses require.
+    $('#q-credit').textContent = s.credit ? `Question: ${s.credit}` : '';
     $('#q-media').replaceChildren(s.image ? el('img', { src: s.image, alt: '' }) : '');
 
     // Even-numbered answers sit on the left, odd on the right, all facing the table.

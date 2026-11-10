@@ -10,6 +10,7 @@ const QRCode = require('qrcode');
 
 const config = require('./config');
 const { listGames, buildRound } = require('./games');
+const sources = require('./sources');
 const { Game } = require('./game');
 
 const app = express();
@@ -175,7 +176,8 @@ io.on('connection', (socket) => {
       if (games.size >= config.MAX_GAMES) throw new Error('The server is busy. Try again later.');
 
       // The chosen game + categories + settings → the questions for this round (see games.js).
-      const { game: def, round: set } = buildRound({ game: gameId, packs, customSet, settings });
+      // Online categories are fetched live here, which can take a few seconds.
+      const { game: def, round: set } = await buildRound({ game: gameId, packs, customSet, settings });
 
       const pin = newPin();
       const joinUrl = `${baseUrlFor(socket)}/join?pin=${pin}`;
@@ -290,10 +292,12 @@ server.listen(config.PORT, config.HOST, () => {
   if (lan) console.log(`  On your LAN:  http://${lan}:${config.PORT}/host`);
   if (config.PUBLIC_URL) console.log(`  Public URL:   ${config.PUBLIC_URL}/host`);
   for (const g of listGames()) {
-    console.log(`  ${(g.name + ':').padEnd(17)}${g.packs.length} categories`);
+    const online = g.online.reduce((n, s) => n + s.categories.length, 0);
+    console.log(`  ${(g.name + ':').padEnd(17)}${g.packs.length} local categories${online ? ` + ${online} online` : ''}`);
     for (const e of g.errors) console.warn(`  ! Skipped ${e}`);
   }
   console.log('');
+  sources.warmUp(); // fetch an Open Trivia DB session token in the background
 });
 
 function shutdown() {
