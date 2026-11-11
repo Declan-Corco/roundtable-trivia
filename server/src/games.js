@@ -16,6 +16,21 @@ const { loadSets, validateSet } = require('./trivia');
 const sources = require('./sources');
 
 const DEFAULT_ONLINE_COUNT = 20; // when a host picks "All" with online categories
+
+/** Both games: move on from the reveal / results and the standings by itself after this long (0 = the host presses). */
+const AUTO_SETTING = {
+  id: 'auto',
+  label: 'Move on automatically',
+  hint: 'After each answer and the standings. You can still press to go sooner.',
+  slider: true,
+  options: [
+    { value: 0, label: 'Manual' },
+    { value: 10, label: '10 sec' },
+    { value: 30, label: '30 sec' },
+    { value: 60, label: '1 min' },
+  ],
+  default: 0,
+};
 const MAX_ROUND = 50;
 
 const WAGER = {
@@ -68,6 +83,7 @@ const WAGER = {
       ],
       default: true,
     },
+    AUTO_SETTING,
   ],
 };
 
@@ -94,6 +110,7 @@ const ONLY_ONE = {
       options: [45, 60, 90, 120].map((s) => ({ value: s, label: `${s}s` })),
       default: 60,
     },
+    AUTO_SETTING,
   ],
 };
 
@@ -141,7 +158,7 @@ const loadPacks = () => loadSets(config.TRIVIA_DIR);
 /** Questions from a pack, labelled with the pack's title as their category (shown before betting). */
 const withCategory = (questions, title) => questions.map((q) => ({ ...q, category: q.category || title }));
 
-const publicSettings = (game) => game.settings.map(({ id, label, hint, options, default: def }) => ({ id, label, hint, options, default: def }));
+const publicSettings = (game) => game.settings.map(({ id, label, hint, slider, options, default: def }) => ({ id, label, hint, slider: !!slider, options, default: def }));
 
 /** Everything the host setup screen needs: the games, their categories and settings. */
 function listGames() {

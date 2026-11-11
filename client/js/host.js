@@ -11,6 +11,7 @@
   const PREFS_KEY = 'rt_host_setup_v3'; // last categories/settings per game, so hosts don't redo them
   let current = null; // last state received from the server
   let stopTimer = null;
+  let stopAuto = null; // auto mode: the countdown on the current "next" button
   let catalog = []; // games offered by the server (/api/games)
   let choice = null; // { game, packs: Set<id>, upload: { data, title, count } | null, custom: '', settings: {} }
 
@@ -232,10 +233,56 @@
     $('#set-list').replaceChildren(...blocks);
   }
 
+  /** A setting shown as a stepped slider (e.g. Manual · 10 sec · 30 sec · 1 min). */
+  function sliderSetting(s) {
+    const index = Math.max(0, s.options.findIndex((o) => o.value === choice.settings[s.id]));
+    const value = el('strong', { className: 'slider-value' }, s.options[index].label);
+    const marks = s.options.map((o, i) =>
+      el(
+        'button',
+        {
+          type: 'button',
+          className: 'slider-mark' + (i === index ? ' on' : ''),
+          onclick: () => {
+            input.value = String(i);
+            input.dispatchEvent(new Event('input'));
+          },
+        },
+        o.label
+      )
+    );
+    const input = el('input', {
+      type: 'range',
+      className: 'range setting-slider',
+      min: 0,
+      max: s.options.length - 1,
+      step: 1,
+      value: index,
+      'aria-label': s.label,
+      oninput: (e) => {
+        const i = Number(e.target.value);
+        choice.settings[s.id] = s.options[i].value;
+        value.textContent = s.options[i].label;
+        marks.forEach((m, k) => m.classList.toggle('on', k === i));
+        updateSummary();
+      },
+    });
+    input.style.setProperty('--steps', s.options.length - 1);
+    return el(
+      'div',
+      { className: 'setting' },
+      el('span', { className: 'setting-label slider-label' }, s.label, value, s.hint ? el('small', {}, s.hint) : null),
+      input,
+      el('div', { className: 'slider-marks' }, ...marks)
+    );
+  }
+
   function renderSettings() {
     $('#settings-list').replaceChildren(
       ...choice.game.settings.map((s) =>
-        el(
+        s.slider
+          ? sliderSetting(s)
+          : el(
           'div',
           { className: 'setting' },
           el('span', { className: 'setting-label' }, s.label, s.hint ? el('small', {}, s.hint) : null),
@@ -407,10 +454,22 @@
     $('#top-pin-code').textContent = s.pin.replace(/(\d{3})(\d{3})/, '$1 $2');
   }
 
+  /** Auto mode: "Standings in 8s" on the button, counting down to when the game moves on by itself. */
+  function autoLabel(btn, label, auto) {
+    stopAuto?.();
+    stopAuto = null;
+    btn.textContent = label;
+    btn.classList.toggle('auto', !!auto);
+    if (!auto) return;
+    stopAuto = countdown(auto.left, auto.total, (sec) => (btn.textContent = `${label} in ${sec}s`));
+  }
+
   function render(state) {
     const wasPicking = picking();
     stopTimer?.();
     stopTimer = null;
+    stopAuto?.();
+    stopAuto = null;
     current = state;
     $('#end-btn').hidden = false;
     showTopPin(state);
@@ -587,7 +646,11 @@
     }
 
     const next = $('#q-next');
-    next.textContent = reveal ? (s.isLast ? 'Final results' : 'Standings') : 'Skip';
+    if (reveal) autoLabel(next, s.isLast ? 'Final results' : 'Standings', s.auto);
+    else {
+      next.textContent = 'Skip';
+      next.classList.remove('auto');
+    }
     next.classList.toggle('btn-primary', reveal);
   }
 
@@ -743,7 +806,7 @@
     $('#rv-hint').textContent = mergeFrom
       ? 'Now tap the group it matches to merge them (or tap it again to cancel).'
       : 'Tap an answer to pull it out of a group. Tap a group, then another, to merge them. ✕ rejects an answer.';
-    $('#rv-next').textContent = s.isLast ? 'Score it · final results' : 'Score it';
+    autoLabel($('#rv-next'), s.isLast ? 'Score it · final results' : 'Score it', s.auto);
     // What Claude did (when the server has an API key and the host left "Claude check" on).
     const ai = s.ai;
     const aiLine = $('#rv-ai');
@@ -792,7 +855,7 @@
       );
     });
     $('#score-list').replaceChildren(...rows);
-    $('#score-next').textContent = `Next ${s.unit.toLowerCase()} (${s.index + 2}/${s.total})`;
+    autoLabel($('#score-next'), `Next ${s.unit.toLowerCase()} (${s.index + 2}/${s.total})`, s.auto);
     showScreen('screen-scoreboard');
   }
 

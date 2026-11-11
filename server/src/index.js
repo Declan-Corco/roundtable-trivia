@@ -191,6 +191,7 @@ io.on('connection', (socket) => {
         kind: def.kind,
         gameName: def.name,
         wagerTime: chosen.wagerTime,
+        autoAdvance: chosen.auto,
         joinUrl,
         qr,
         maxPlayers: config.MAX_PLAYERS,
@@ -221,7 +222,7 @@ io.on('connection', (socket) => {
       if (game.state !== 'lobby') throw new Error('Finish this game first.');
       const { game: def, round: set, settings: chosen } = await buildRound({ game: gameId, packs, customSet, customPrompts, settings });
       if (game.disposed) throw new Error('That game is no longer running.');
-      game.loadRound({ set, kind: def.kind, gameName: def.name, wagerTime: chosen.wagerTime });
+      game.loadRound({ set, kind: def.kind, gameName: def.name, wagerTime: chosen.wagerTime, autoAdvance: chosen.auto });
     })
   );
   socket.on('host:cancel-setup', handler(async () => hostGame().cancelChoosing()));

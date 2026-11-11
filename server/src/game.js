@@ -38,13 +38,16 @@ const newToken = () => crypto.randomBytes(18).toString('base64url');
 const multiplier = (q) => (q.points === 'double' ? 2 : q.points === 'none' ? 0 : 1);
 
 class Game {
-  constructor({ io, pin, set, kind = 'wager', gameName = 'Wager Wars', wagerTime = 15, joinUrl, qr, maxPlayers, onDispose }) {
+  constructor({ io, pin, set, kind = 'wager', gameName = 'Wager Wars', wagerTime = 15, autoAdvance = 0, joinUrl, qr, maxPlayers, onDispose }) {
     this.io = io;
     this.pin = pin;
     this.set = set;
     this.kind = kind; // 'wager' | 'onlyone'
     this.gameName = gameName;
     this.wagerTime = wagerTime; // seconds to place a bet
+    this.autoAdvance = autoAdvance; // seconds before the reveal / results / standings move on by themselves (0 = manual)
+    this.autoTimer = null;
+    this.autoAt = 0; // when the current screen moves on by itself
     this.lastReveal = null; // what the host screen shows after a question
     this.choosing = false; // in the lobby while the host picks the next game (set may be null)
     this.entries = new Map(); // Only One: this round's answers by id { id, text, playerId, rejected }
@@ -328,6 +331,8 @@ class Game {
   reopen() {
     if (this.state !== 'finished' && this.state !== 'lobby') throw new Error('Finish this game first.');
     clearTimeout(this.timer);
+    clearTimeout(this.autoTimer);
+    this.autoAt = 0;
     if (this.state === 'finished') {
       this.set = null;
       this.resetScores();
@@ -340,10 +345,11 @@ class Game {
   }
 
   /** The host picked the next game: load its questions and wait in the lobby for "Start". */
-  loadRound({ set, kind = 'wager', gameName, wagerTime }) {
+  loadRound({ set, kind = 'wager', gameName, wagerTime, autoAdvance = 0 }) {
     if (this.state !== 'lobby') throw new Error('Finish this game first.');
     this.set = set;
     this.kind = kind;
+    this.autoAdvance = autoAdvance;
     this.gameName = gameName;
     this.wagerTime = wagerTime;
     this.choosing = false;
@@ -371,7 +377,31 @@ class Game {
     }
   }
 
+  /**
+   * Auto mode: the reveal, Only One's results and the standings move on by themselves after
+   * `autoAdvance` seconds. The host can still press to go sooner (or edit, which restarts it).
+   */
+  scheduleAuto() {
+    clearTimeout(this.autoTimer);
+    this.autoAt = 0;
+    if (!this.autoAdvance) return;
+    const ms = this.autoAdvance * 1000;
+    const state = this.state;
+    const round = this.qIndex;
+    this.autoAt = Date.now() + ms;
+    this.autoTimer = setTimeout(() => {
+      if (!this.disposed && this.state === state && this.qIndex === round) this.next();
+    }, ms);
+  }
+
+  /** For the host screen: how long until it moves on by itself. */
+  autoInfo() {
+    return this.autoAt ? { left: Math.max(0, this.autoAt - Date.now()), total: this.autoAdvance * 1000 } : null;
+  }
+
   next() {
+    clearTimeout(this.autoTimer);
+    this.autoAt = 0;
     if (this.state === 'reveal') {
       if (this.isLastQuestion) this.finish();
       else this.showScoreboard();
@@ -599,6 +629,7 @@ class Game {
     if (!stillGrading()) return;
     this.gradingStep = null;
     this.state = 'review';
+    this.scheduleAuto();
     this.touch();
     this.broadcastState();
   }
@@ -690,6 +721,7 @@ class Game {
     } else {
       throw new Error('Unknown change.');
     }
+    this.scheduleAuto(); // the host is busy here: restart the countdown
     this.touch();
     this.broadcastState();
   }
@@ -784,18 +816,22 @@ class Game {
       bets: { biggestWin, biggestLoss },
     };
     this.state = 'reveal';
+    this.scheduleAuto();
     this.touch();
     this.broadcastState();
   }
 
   showScoreboard() {
     this.state = 'scoreboard';
+    this.scheduleAuto();
     this.touch();
     this.broadcastState();
   }
 
   finish() {
     clearTimeout(this.timer);
+    clearTimeout(this.autoTimer);
+    this.autoAt = 0;
     this.state = 'finished';
     this.touch();
     this.broadcastState();
@@ -813,6 +849,7 @@ class Game {
     if (this.disposed) return;
     this.disposed = true;
     clearTimeout(this.timer);
+    clearTimeout(this.autoTimer);
     clearTimeout(this.hostGraceTimer);
     for (const p of this.players.values()) clearTimeout(p.dropTimer);
     this.io.in(this.room).socketsLeave(this.room);
@@ -904,6 +941,7 @@ class Game {
           isLast: this.isLastQuestion,
           seats: this.seatList(true),
           tableSize: this.tableSize(),
+          auto: this.autoInfo(),
           ...this.lastReveal,
         };
         break;
@@ -941,6 +979,7 @@ class Game {
           category: q.category || null,
           groups,
           ai: this.ai,
+          auto: this.autoInfo(),
           isLast: this.isLastQuestion,
           playerCount: this.players.size,
         };
@@ -951,6 +990,7 @@ class Game {
         payload = {
           phase: 'scoreboard',
           ...common,
+          auto: this.autoInfo(),
           maxScore: board[0]?.score || 0,
           top: board.slice(0, 5).map((p, i) => ({
             name: p.name,
