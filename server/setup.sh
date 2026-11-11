@@ -174,7 +174,7 @@ if [[ "$(realpath "$SRC_ROOT")" != "$(realpath "$INSTALL_DIR")" ]]; then
     if [[ -d "$SRC_ROOT/server/$d" ]]; then cp -r "$SRC_ROOT/server/$d/." "$INSTALL_DIR/server/$d/"; fi
   done
 fi
-mkdir -p "$INSTALL_DIR/server/trivia/media"
+mkdir -p "$INSTALL_DIR/server/trivia/media" "$INSTALL_DIR/server/data" # data/: the saved question bank
 
 # Fix Windows line endings if the files were edited on Windows.
 for d in "${PACK_DIRS[@]}"; do

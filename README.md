@@ -8,7 +8,7 @@ A live trivia night around a round table, playing **Wager Wars**. The **host** p
 2. **Answer.** The question appears and everyone answers **A, B, C or D**.
 3. **Reveal.** A right answer wins your bet, a wrong answer (or no answer) loses it. Double-points questions pay out twice the bet. The screen calls out the biggest win and the biggest loss.
 
-Questions come live from Open Trivia DB (see below), or from your own files.
+Questions come from Open Trivia DB (see below), or from your own files.
 
 ```
 Roundtable/
@@ -214,7 +214,7 @@ There's no router to configure.
 
 ## 4. Where trivia questions come from
 
-When a host opens a Trivia lobby, the server fetches questions live from [Open Trivia DB](https://opentdb.com), a free public trivia database licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+Questions come from [Open Trivia DB](https://opentdb.com), a free public trivia database licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The server keeps a **question bank** of them, so a lobby opens instantly.
 
 The host picks from a few popular categories, and can tick several to mix them:
 
@@ -230,9 +230,9 @@ The host picks from a few popular categories, and can tick several to mix them:
 They can also set the **Difficulty**: Mixed, Easy, Medium or Hard.
 
 - Each question shows a small credit line on the host screen ("Open Trivia DB · CC BY-SA 4.0"), as the license requires.
-- Open Trivia DB allows **one request every 5 seconds**, and each category needs its own request. A lobby that mixes several categories therefore takes a few seconds to open, and the button shows "Fetching questions…" meanwhile.
-- The server uses a session token, so the same question doesn't come up twice in a few hours.
-- **The server needs internet access** for Trivia. If Open Trivia DB can't be reached, the host sees a clear error. Your own question files (next section) work offline.
+- **The question bank.** Open Trivia DB allows only one request every 5 seconds, one category at a time, so fetching questions when a lobby opens took 10–15 seconds. Instead, the server fills a bank in the background, about 100 questions per category. A new server takes 2–3 minutes to fill it. The bank is saved in `server/data/question-bank.json` (on an installed server, `/opt/roundtable/server/data/`), so it is ready straight away after a restart or an update.
+- **No repeats.** Played questions leave the bank and the server tops it back up between games, so a question doesn't come back until its whole category has been played through. If a category runs short (lots of games in a row, or a difficulty with few questions), the rest are fetched live, which takes a few seconds.
+- **The server needs internet access** to fill the bank. If Open Trivia DB can't be reached, the server keeps using what's banked and tries again every minute. Your own question files (next section) work offline. Delete the bank file to start it fresh.
 - To offer more categories, add a line to the `CATEGORIES` list in [server/src/sources.js](server/src/sources.js). Category IDs are listed at https://opentdb.com/api_category.php.
 
 ---

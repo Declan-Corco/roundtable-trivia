@@ -17,6 +17,8 @@ module.exports = {
   PUBLIC_URL: (process.env.PUBLIC_URL || '').trim().replace(/\/+$/, ''),
   // Folder containing trivia set .json files (re-scanned every time the host screen loads).
   TRIVIA_DIR: process.env.TRIVIA_DIR || path.join(__dirname, '..', 'trivia'),
+  // Folder for files the server writes itself, e.g. the Open Trivia DB question bank.
+  DATA_DIR: process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
   // Folder containing the website frontend.
   CLIENT_DIR: process.env.CLIENT_DIR || path.join(__dirname, '..', '..', 'client'),
   // Allow hosts to upload a trivia .json file from their own computer.

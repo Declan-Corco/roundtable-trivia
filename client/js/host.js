@@ -133,7 +133,7 @@
     const blocks = [];
     const online = game.online;
     if (online) {
-      // Popular Open Trivia DB categories, fetched live; credited as its license requires.
+      // Popular Open Trivia DB categories (banked on the server); credited as its license requires.
       blocks.push(
         el(
           'div',
@@ -245,7 +245,7 @@
     let text;
     if (online) {
       const n = settings.count || 20;
-      text = `${n} questions · fetched live when you open the lobby`;
+      text = `${n} questions · from ${choice.packs.size + (choice.upload ? 1 : 0)} categor${choice.packs.size + (choice.upload ? 1 : 0) === 1 ? 'y' : 'ies'}`;
     } else if (available) {
       const playing = settings.count ? Math.min(settings.count, available) : available;
       text = `${playing} question${playing === 1 ? '' : 's'}${playing < available ? ` from ${available}` : ''}`;
@@ -280,8 +280,7 @@
     const btn = $('#create-btn');
     const label = btn.textContent;
     btn.disabled = true;
-    // Open Trivia DB allows one request every 5 seconds, so mixing its categories takes a moment.
-    btn.textContent = onlineChosen().length ? 'Fetching questions…' : 'Opening…';
+    btn.textContent = 'Opening…';
     $('#settings-error').textContent = '';
     storage.set(localStorage, PREFS_KEY, { packs: [...choice.packs], settings: choice.settings });
     const next = picking(); // the same table's next game, or a new table

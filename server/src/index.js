@@ -314,8 +314,10 @@ server.listen(config.PORT, config.HOST, () => {
   const info = gameInfo();
   console.log(`  ${info.name}: ${info.online.categories.length} from ${info.online.name} + ${info.packs.length} from files`);
   for (const e of info.errors) console.warn(`  ! Skipped ${e}`);
+  sources.warmUp(); // load the saved question bank and top it up in the background
+  const bank = sources.bankStatus();
+  console.log(`  Question bank: ${bank.ready} questions ready${bank.filling ? ', filling up in the background' : ''}`);
   console.log('');
-  sources.warmUp(); // fetch an Open Trivia DB session token in the background
 });
 
 function shutdown() {
