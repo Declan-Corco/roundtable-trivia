@@ -426,7 +426,7 @@
       case 'question':
         return state.kind === 'onlyone' ? renderListRound(state) : renderQuestion(state, false);
       case 'grouping':
-        return renderListRound(state);
+        return renderGrading(state);
       case 'review':
         return renderReview(state);
       case 'reveal':
@@ -621,8 +621,7 @@
 
   function ooLabel(s) {
     const n = s.answerCount || 0;
-    $('#oo-label').textContent =
-      s.phase === 'grouping' ? 'Comparing answers…' : `${n} answer${n === 1 ? '' : 's'} · ${s.answered} of ${s.playerCount} done`;
+    $('#oo-label').textContent = `${n} answer${n === 1 ? '' : 's'} · ${s.answered} of ${s.playerCount} done`;
   }
 
   function renderListRound(s) {
@@ -633,20 +632,26 @@
     table.classList.remove('low');
     showScreen('screen-oo');
     ooLabel(s);
-    if (s.phase === 'grouping') {
-      $('#oo-timer').textContent = '…';
-      $('#oo-ring').style.transition = 'none';
-      $('#oo-ring').style.strokeDashoffset = '100';
-      $('#oo-next').hidden = true;
-      return;
-    }
-    $('#oo-next').hidden = false;
     drainRing($('#oo-ring'), s.timeLeft, s.time * 1000);
     stopTimer = countdown(s.timeLeft, s.time * 1000, (sec) => {
       $('#oo-timer').textContent = sec;
       table.classList.toggle('low', sec <= 10 && sec > 0);
     });
     renderListSeats($('#oo-seats'), s.seats, s.tableSize);
+  }
+
+  /** Grading: the logo spins while the server matches answers and (with an API key) Claude checks them. */
+  function renderGrading(s) {
+    $('#gr-progress').textContent = `${s.gameName} · Round ${s.index + 1} of ${s.total}`;
+    $('#gr-prompt').textContent = s.question;
+    const n = s.answerCount || 0;
+    $('#gr-count').textContent = `${n} answer${n === 1 ? '' : 's'} from ${s.playerCount} table${s.playerCount === 1 ? '' : 's'}`;
+    const match = $('#gr-step-match');
+    const claude = $('#gr-step-claude');
+    match.className = s.step === 'matching' ? 'active' : 'done';
+    claude.hidden = !s.claude;
+    claude.className = s.step === 'checking' ? 'active' : '';
+    showScreen('screen-grading');
   }
 
   let mergeFrom = null; // review: the group picked to merge into another
@@ -744,12 +749,10 @@
     const aiLine = $('#rv-ai');
     aiLine.hidden = !ai;
     aiLine.className = `rv-ai ${ai?.status || ''}`;
-    if (ai?.status === 'checking') aiLine.textContent = 'Claude is double-checking the answers…';
-    else if (ai?.status === 'done') {
+    if (ai?.status === 'done') {
       const did = [ai.rejected && `rejected ${ai.rejected}`, ai.merged && `merged ${ai.merged}`, ai.split && `split ${ai.split}`].filter(Boolean);
       aiLine.textContent = did.length ? `Claude checked: ${did.join(' · ')}. Tap anything to change it.` : 'Claude checked: no changes needed.';
-    } else if (ai?.status === 'skipped') aiLine.textContent = 'You changed the groups first, so Claude’s suggestions were left out.';
-    else if (ai?.status === 'error') aiLine.textContent = `Claude couldn’t check this round (${ai.message}).`;
+    } else if (ai?.status === 'error') aiLine.textContent = `Claude couldn’t check this round (${ai.message}).`;
     showScreen('screen-review');
   }
 

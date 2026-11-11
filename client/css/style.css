@@ -816,6 +816,22 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .oo-prompt { margin: 0; font-size: clamp(2.2rem, 5.5vw, 4.4rem); font-weight: 650; line-height: 1.1; animation: pop-in 0.45s ease; }
 .custom-prompts { resize: vertical; min-height: 84px; font-size: 1rem; text-align: left; }
 
+/* Only One grading: the logo spins while answers are matched and checked */
+.host .grading-screen { gap: 16px; }
+.gr-prompt { margin: 0; font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 650; line-height: 1.1; }
+.grading-mark { width: clamp(160px, 26vh, 260px); height: clamp(160px, 26vh, 260px); margin: 10px 0; animation: orbit 3s linear infinite; }
+.grading-mark svg { width: 100%; height: 100%; display: block; }
+.gr-title { margin: 0; }
+.gr-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; text-align: left; font-weight: 600; font-size: 1.15rem; color: var(--muted); }
+.gr-steps li { display: flex; align-items: center; gap: 12px; transition: color 0.2s; }
+.gr-steps li.active { color: var(--brown-900); }
+.gr-steps li.done { color: var(--teal-ink); }
+.gr-dot { width: 22px; height: 22px; flex: none; border-radius: 50%; border: 3px solid var(--cream-deep); display: grid; place-items: center; font-size: 0.8rem; color: var(--white); }
+.gr-steps li.active .gr-dot { border-color: var(--teal); border-top-color: transparent; animation: orbit 0.9s linear infinite; }
+.gr-steps li.done .gr-dot { background: var(--teal); border-color: var(--teal); }
+.gr-steps li.done .gr-dot::after { content: "✓"; font-weight: 700; }
+.gr-count { margin: 0; }
+
 /* Only One review: groups of answers that count as the same */
 .host .review-screen { justify-content: flex-start; align-items: stretch; gap: 14px; padding: 16px 20px; }
 .review-screen .q-top { text-align: center; }

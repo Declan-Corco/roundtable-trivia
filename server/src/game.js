@@ -12,6 +12,7 @@
 // After the last question the host can play again with the same table: everyone goes back to the
 // lobby (same PIN) while the host picks the next game. Players can join at any point.
 const crypto = require('crypto');
+const config = require('./config');
 const matcher = require('./matcher');
 const aicheck = require('./aicheck');
 
@@ -30,13 +31,14 @@ const WAGER_FLOOR = 500; // you can always bet up to this much, even with fewer 
 const UNIQUE_POINTS = 100; // per answer no other table wrote
 const MAX_LIST = 40; // answers per table per round
 const MAX_ANSWER_LEN = 50;
+const GRADING_MIN_MS = 1800; // the grading screen shows at least this long, so it doesn't just flash
 
 const newToken = () => crypto.randomBytes(18).toString('base64url');
 /** What a right answer pays per point bet: double-points questions pay 2x, practice questions 0. */
 const multiplier = (q) => (q.points === 'double' ? 2 : q.points === 'none' ? 0 : 1);
 
 class Game {
-  constructor({ io, pin, set, kind = 'wager', gameName = 'Wager Wars', wagerTime = 15, aiCheck = false, joinUrl, qr, maxPlayers, onDispose }) {
+  constructor({ io, pin, set, kind = 'wager', gameName = 'Wager Wars', wagerTime = 15, joinUrl, qr, maxPlayers, onDispose }) {
     this.io = io;
     this.pin = pin;
     this.set = set;
@@ -47,9 +49,8 @@ class Game {
     this.choosing = false; // in the lobby while the host picks the next game (set may be null)
     this.entries = new Map(); // Only One: this round's answers by id { id, text, playerId, rejected }
     this.groups = null; // Only One: answers that count as the same [{ id, ids: [entry ids], ai? }]
-    this.aiCheck = aiCheck; // Only One: Claude double-checks each round (aicheck.js)
-    this.ai = null; // Only One: Claude's check of this round { status, ... }
-    this.editVersion = 0; // Only One: bumped on every host edit, so a late Claude result doesn't undo them
+    this.ai = null; // Only One: Claude's check of this round { status, ... } (when the server has an API key)
+    this.gradingStep = null; // Only One: 'matching' | 'checking' while the grading screen is up
     this.seq = 0; // ids for answers and groups
     this.joinUrl = joinUrl;
     this.qr = qr;
@@ -339,11 +340,10 @@ class Game {
   }
 
   /** The host picked the next game: load its questions and wait in the lobby for "Start". */
-  loadRound({ set, kind = 'wager', gameName, wagerTime, aiCheck = false }) {
+  loadRound({ set, kind = 'wager', gameName, wagerTime }) {
     if (this.state !== 'lobby') throw new Error('Finish this game first.');
     this.set = set;
     this.kind = kind;
-    this.aiCheck = aiCheck;
     this.gameName = gameName;
     this.wagerTime = wagerTime;
     this.choosing = false;
@@ -557,13 +557,23 @@ class Game {
     this.checkAllIn();
   }
 
-  /** Groups this round's answers (rules + the local model, see matcher.js), then shows them to the host. */
+  /**
+   * Grading, while the host sees a spinning logo: group this round's answers (rules + the local
+   * model, see matcher.js), then (with an API key) let Claude check them (aicheck.js). The results
+   * appear once both are done; the host can still change anything before scoring.
+   */
   async review() {
     if (this.state !== 'question') return;
     clearTimeout(this.timer);
+    const round = this.qIndex;
+    const started = Date.now();
+    const stillGrading = () => !this.disposed && this.state === 'grouping' && this.qIndex === round;
     this.state = 'grouping';
+    this.gradingStep = 'matching';
+    this.ai = null;
     this.touch();
     this.broadcastState();
+
     const entries = [];
     for (const p of this.players.values()) for (const a of p.list) entries.push({ id: a.id, text: a.text, playerId: p.id, rejected: false });
     this.entries = new Map(entries.map((e) => [e.id, e]));
@@ -574,44 +584,49 @@ class Game {
       console.warn(`[game ${this.pin}] grouping failed, every answer stands alone: ${err.message}`);
       grouped = entries.map((e) => [e.id]);
     }
-    if (this.disposed || this.state !== 'grouping') return;
+    if (!stillGrading()) return;
     this.groups = grouped.map((ids) => ({ id: `g${++this.seq}`, ids }));
-    this.ai = this.aiCheck && aicheck.enabled() && entries.length ? { status: 'checking' } : null;
+
+    if (aicheck.enabled() && entries.length) {
+      this.gradingStep = 'checking';
+      this.broadcastState();
+      await this.runAiCheck();
+      if (!stillGrading()) return;
+    }
+
+    const wait = GRADING_MIN_MS - (Date.now() - started);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    if (!stillGrading()) return;
+    this.gradingStep = null;
     this.state = 'review';
     this.touch();
     this.broadcastState();
-    if (this.ai) this.runAiCheck();
   }
 
-  /** Claude checks the round in the background and its changes are applied to the review. */
+  /** Claude checks the round (gives up after AI_CHECK_WAIT_MS) and its changes are applied to the groups. */
   async runAiCheck() {
-    const round = this.qIndex;
-    const version = this.editVersion;
     const groups = this.groups
       .map((g) => ({ id: g.id, entries: g.ids.map((id) => this.entries.get(id)).filter((e) => e && !e.rejected).map((e) => ({ id: e.id, text: e.text })) }))
       .filter((g) => g.entries.length);
     let result;
+    let timer;
     try {
-      result = await aicheck.check(this.question.question, groups);
+      const giveUp = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('it took too long')), config.AI_CHECK_WAIT_MS);
+      });
+      result = await Promise.race([aicheck.check(this.question.question, groups), giveUp]);
     } catch (err) {
-      if (this.disposed || this.state !== 'review' || this.qIndex !== round) return;
       console.warn(`[game ${this.pin}] Claude check failed: ${err.message}`);
       this.ai = { status: 'error', message: err.message };
-      this.broadcastState();
       return;
+    } finally {
+      clearTimeout(timer);
     }
-    if (this.disposed || this.state !== 'review' || this.qIndex !== round) return; // the host already scored it
     const u = result.usage || {};
     console.log(
       `[game ${this.pin}] Claude check: ${u.input_tokens ?? '?'} in / ${u.output_tokens ?? '?'} out tokens, ` +
         `~$${aicheck.costOf(u).toFixed(5)}, ${(result.ms / 1000).toFixed(1)} s`
     );
-    if (this.editVersion !== version) {
-      // The host changed things while Claude was checking: their call wins.
-      this.ai = { status: 'skipped' };
-      this.broadcastState();
-      return;
-    }
     let split = 0;
     for (const id of result.split) {
       const g = this.groups.find((x) => x.ids.includes(id));
@@ -639,8 +654,6 @@ class Game {
       rejected++;
     }
     this.ai = { status: 'done', rejected, merged, split };
-    this.touch();
-    this.broadcastState();
   }
 
   /** 'unique' (one table wrote it: it scores), 'shared' (several did: nobody scores) or 'rejected'. */
@@ -657,7 +670,6 @@ class Game {
    */
   editGroups({ action, group, into, entry } = {}) {
     if (this.kind !== 'onlyone' || this.state !== 'review') throw new Error('Nothing to check right now.');
-    this.editVersion++;
     const find = (gid) => this.groups.find((g) => g.id === String(gid));
     if (action === 'merge') {
       const from = find(group);
@@ -896,7 +908,16 @@ class Game {
         };
         break;
       case 'grouping':
-        payload = { phase: 'grouping', ...common, question: q.question, category: q.category || null, answerCount: this.entries.size };
+        payload = {
+          phase: 'grouping',
+          ...common,
+          question: q.question,
+          category: q.category || null,
+          answerCount: this.entries.size,
+          playerCount: this.players.size,
+          step: this.gradingStep, // 'matching' | 'checking'
+          claude: aicheck.enabled(), // whether there's a Claude step at all
+        };
         break;
       case 'review': {
         const groups = this.groups.map((g) => {

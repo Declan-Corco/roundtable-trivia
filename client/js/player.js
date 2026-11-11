@@ -384,7 +384,8 @@
     const mine = s.mine || [];
     const grouped = mine.some((m) => m.status);
     $('#c-prompt').textContent = s.question;
-    $('#c-title').textContent = grouped ? 'The host is checking answers' : 'Comparing answers…';
+    $('#c-title').textContent = grouped ? 'The host is checking answers' : 'Grading answers…';
+    $('#c-spinner').hidden = grouped;
     $('#c-list').replaceChildren(...mine.map(markRow));
     $('#c-note').textContent = mine.length ? (grouped ? '★ only you · = another table too · ✕ rejected' : '') : 'You didn’t write anything this round.';
     showScreen('screen-checking');

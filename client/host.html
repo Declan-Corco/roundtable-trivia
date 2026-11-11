@@ -197,6 +197,19 @@
     </div>
   </section>
 
+  <!-- Only One: grading (the logo spins while answers are matched and Claude checks them) -->
+  <section class="screen grading-screen" id="screen-grading" hidden>
+    <span class="q-counter" id="gr-progress"></span>
+    <h1 class="gr-prompt" id="gr-prompt"></h1>
+    <div class="grading-mark" data-mark aria-hidden="true"></div>
+    <p class="big-title gr-title">Grading answers…</p>
+    <ul class="gr-steps">
+      <li id="gr-step-match"><span class="gr-dot" aria-hidden="true"></span>Matching answers that mean the same thing</li>
+      <li id="gr-step-claude"><span class="gr-dot" aria-hidden="true"></span>Claude is double-checking</li>
+    </ul>
+    <p class="muted gr-count" id="gr-count"></p>
+  </section>
+
   <!-- Only One: the host checks which answers count as the same before scoring -->
   <section class="screen review-screen" id="screen-review" hidden>
     <div class="q-top">
