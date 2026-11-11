@@ -14,6 +14,9 @@ const config = require('./config');
 const { keyOf } = require('./matcher');
 
 const TIMEOUT_MS = 20000;
+// Big rounds are split into requests of about this many answers that run at the same time, so a
+// 45-answer round takes about as long as a 12-answer one (one long reply took over 15 s).
+const CHUNK_ANSWERS = 12;
 
 let clientPromise = null;
 /** The SDK is loaded on first use, so servers without a key never load it. */
@@ -52,7 +55,7 @@ The answers have already been grouped by a quick automatic matcher. Do two thing
 
 1. verdicts - judge EVERY answer. Give one verdict per answer id, with "answer", "note", "fits" and "same_as", in that order. "answer" is that id's answer text, copied exactly - it makes sure each verdict lands on the right answer.
 
-   note - first, say in a few words what the answer actually is ("an ice-cream flavor", "a polite greeting", "a real chip flavor", "a kitchen appliance"). Write it before you decide "fits"; if the answer doesn't fit, this note is the reason shown to the players, so make it clear.
+   note - first, in at most 6 words, say what the answer actually is ("an ice-cream flavor", "a polite greeting", "a real chip flavor", "a kitchen appliance"). Write it before you decide "fits"; if the answer doesn't fit, this note is the reason shown to the players, so make it clear.
 
    fits - would most players immediately accept the answer as one of the things the category asks for? Read the category exactly as it is worded.
    - true: a common, recognisable member of the category, in any wording (typos, slang, brand names, a specific example). It doesn't have to be true in every case: "a dog" fits "Things in a house" even though many houses have no dog. If a well-known example of the category fits it (a famous character, a common product, a typical situation), the answer fits.
@@ -64,36 +67,69 @@ The answers have already been grouped by a quick automatic matcher. Do two thing
 
 2. split - answers that do not mean the same thing as the rest of their own group (for example "grappling hook" grouped with "gun"). When unsure, leave the group as it is.
 
-Use only the ids you are given.`;
+Use only the ids you are given. If you're asked to judge only some of the groups, give verdicts and splits for those groups only, but compare them against all the answers for same_as.`;
 
 /**
  * Asks Claude to check a round.
  * groups: [{ id, entries: [{ id, text }] }] (rejected answers already left out)
- * Returns { misfits: [{ id, why }], merge: [[groupId]], split: [entryId], judged, usage, ms } or throws.
+ * Returns { misfits: [{ id, why }], merge: [[groupId]], split: [entryId], judged, total, parts, usage, ms } or throws
+ * (only if every part of the check failed).
  */
 async function check(category, groups) {
   const { Anthropic, client, format } = await getClient();
-  const lines = groups.map((g) => `${g.id}: ${g.entries.map((e) => `[${e.id}] ${e.text}`).join(' | ')}`);
-  const started = Date.now();
-  let response;
-  try {
-    response = await client.messages.parse({
-      model: config.AI_CHECK_MODEL,
-      max_tokens: 8000,
-      system: SYSTEM,
-      messages: [{ role: 'user', content: `Category: "${category}"\n\nGroups (one per line; answer ids in brackets):\n${lines.join('\n')}` }],
-      output_config: { effort: 'medium', format },
-    });
-  } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) throw new Error('the API key was rejected');
-    if (err instanceof Anthropic.RateLimitError) throw new Error('rate limited');
-    if (err instanceof Anthropic.APIError) throw new Error(`API error ${err.status ?? ''}`.trim());
-    throw err;
+  const line = (g) => `${g.id}: ${g.entries.map((e) => `[${e.id}] ${e.text}`).join(' | ')}`;
+  const everything = groups.map(line).join('\n');
+
+  // Whole groups, about CHUNK_ANSWERS answers per request.
+  const chunks = [];
+  let part = [];
+  let size = 0;
+  for (const g of groups) {
+    if (size && size + g.entries.length > CHUNK_ANSWERS) {
+      chunks.push(part);
+      part = [];
+      size = 0;
+    }
+    part.push(g);
+    size += g.entries.length;
   }
-  if (response.stop_reason === 'refusal') throw new Error('Claude declined to check this round');
-  if (response.stop_reason === 'max_tokens') throw new Error('the reply was cut off');
-  const out = response.parsed_output;
-  if (!out) throw new Error("the reply couldn't be read");
+  if (part.length) chunks.push(part);
+
+  const ask = async (mine) => {
+    const content =
+      chunks.length === 1
+        ? `Category: "${category}"\n\nGroups (one per line; answer ids in brackets):\n${everything}`
+        : `Category: "${category}"\n\nAll the answers this round, for comparing (same_as):\n${everything}\n\n` +
+          `Judge ONLY these groups - one verdict for each of their answers, and splits only among these groups:\n${mine.map(line).join('\n')}`;
+    let response;
+    try {
+      response = await client.messages.parse({
+        model: config.AI_CHECK_MODEL,
+        max_tokens: 8000,
+        system: SYSTEM,
+        messages: [{ role: 'user', content }],
+        output_config: { effort: 'medium', format },
+      });
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) throw new Error('the API key was rejected');
+      if (err instanceof Anthropic.RateLimitError) throw new Error('rate limited');
+      if (err instanceof Anthropic.APIError) throw new Error(`API error ${err.status ?? ''}`.trim());
+      throw err;
+    }
+    if (response.stop_reason === 'refusal') throw new Error('Claude declined to check this round');
+    if (response.stop_reason === 'max_tokens') throw new Error('the reply was cut off');
+    if (!response.parsed_output) throw new Error("the reply couldn't be read");
+    return response;
+  };
+
+  const started = Date.now();
+  const settled = await Promise.allSettled(chunks.map(ask));
+  const done = settled.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+  if (!done.length) throw settled[0].reason; // every part failed
+  const out = { verdicts: done.flatMap((r) => r.parsed_output.verdicts), split: done.flatMap((r) => r.parsed_output.split) };
+  const usage = {};
+  for (const r of done) for (const [k, v] of Object.entries(r.usage || {})) if (typeof v === 'number') usage[k] = (usage[k] || 0) + v;
+  const failedParts = settled.length - done.length;
   // Each verdict carries the answer's text as well as its id. Claude occasionally writes a verdict
   // against the wrong id (judging "spreadsheet" but labelling it "utility belt"), so the text decides:
   // a mismatched id is relabelled to the answer with that text, or the verdict is dropped if it's unclear.
@@ -148,7 +184,9 @@ async function check(category, groups) {
     total: groupOf.size,
     relabelled, // verdicts Claude put on the wrong id, moved to the right answer by its text
     dropped, // verdicts that matched no answer at all
-    usage: response.usage,
+    parts: chunks.length, // requests made (big rounds are split)
+    failedParts, // requests that failed (their answers just weren't checked)
+    usage,
     ms: Date.now() - started,
   };
 }

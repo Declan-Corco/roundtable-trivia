@@ -4,7 +4,7 @@
 //   cd /opt/roundtable/server && sudo node scripts/try-claude-check.js
 //   sudo AI_CHECK_MODEL=claude-sonnet-5-5 node scripts/try-claude-check.js   # try another model
 //
-// Uses ANTHROPIC_API_KEY from the environment, or from /etc/roundtable.env. Costs about a quarter of a cent.
+// Uses ANTHROPIC_API_KEY from the environment, or from /etc/roundtable.env. Costs about half a cent.
 const fs = require('fs');
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -54,6 +54,19 @@ const ROUNDS = [
     misfits: ['volcano', 'giraffe'],
     merges: [['Keurig', 'coffee maker']],
   },
+  {
+    // A full-size round (45 answers, like a 3-table game): checked in parallel parts, so it should be about as quick.
+    category: 'Things in a kitchen',
+    groups: [
+      'fridge', 'oven', 'microwave', 'toaster', 'blender', 'kettle', 'dishwasher', 'sink', 'stove', 'spatula',
+      'whisk', 'frying pan', 'saucepan', 'cutting board', 'knife block', 'colander', 'measuring cups', 'oven mitts', 'dish soap', 'sponge',
+      'paper towels', 'spice rack', 'salt shaker', 'pepper grinder', 'cookbook', 'trash can', 'coffee maker', 'tea towel', 'rolling pin', 'ladle',
+      'can opener', 'tongs', 'mixing bowl', 'baking sheet', 'tupperware', 'refrigerator', 'air fryer', 'cheese grater', 'lunchbox', 'apron',
+      'lawn mower', 'snowboard', 'the moon', 'a giraffe', 'toilet',
+    ].map((t) => [t]),
+    misfits: ['lawn mower', 'snowboard', 'the moon', 'a giraffe', 'toilet'],
+    merges: [['fridge', 'refrigerator']],
+  },
 ];
 
 (async () => {
@@ -76,7 +89,8 @@ const ROUNDS = [
     cost += aicheck.costOf(r.usage);
     const rejected = r.misfits.map((m) => text[m.id]);
     const fixes = r.relabelled || r.dropped ? `, fixed ${r.relabelled} mislabelled, ignored ${r.dropped}` : '';
-    console.log(`\n"${round.category}"  (${(r.ms / 1000).toFixed(1)} s, ~$${aicheck.costOf(r.usage).toFixed(5)}, judged ${r.judged}/${r.total}${fixes})`);
+    const parts = r.parts > 1 ? ` in ${r.parts} parallel parts${r.failedParts ? ` (${r.failedParts} failed)` : ''}` : '';
+    console.log(`\n"${round.category}"  (${(r.ms / 1000).toFixed(1)} s, ~$${aicheck.costOf(r.usage).toFixed(5)}, judged ${r.judged}/${r.total}${parts}${fixes})`);
     for (const m of r.misfits) console.log(`   ✕ ${text[m.id]}  — ${m.why}`);
     for (const set of r.merge) console.log(`   = merged: ${set.map((g) => groupText[g]).join('  |  ')}`);
     for (const id of r.split) console.log(`   ÷ split out: ${text[id]}`);

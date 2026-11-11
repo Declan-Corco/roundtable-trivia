@@ -655,7 +655,8 @@ class Game {
     }
     const u = result.usage || {};
     console.log(
-      `[game ${this.pin}] Claude check: judged ${result.judged}/${result.total} answers, rejected ${result.misfits.length}` +
+      `[game ${this.pin}] Claude check: judged ${result.judged}/${result.total} answers in ${result.parts} part${result.parts === 1 ? '' : 's'}` +
+        (result.failedParts ? ` (${result.failedParts} failed)` : '') + `, rejected ${result.misfits.length}` +
         (result.relabelled || result.dropped ? ` (fixed ${result.relabelled} mislabelled, ignored ${result.dropped})` : '') + '; ' +
         `${u.input_tokens ?? '?'} in / ${u.output_tokens ?? '?'} out tokens, ~$${aicheck.costOf(u).toFixed(5)}, ${(result.ms / 1000).toFixed(1)} s`
     );

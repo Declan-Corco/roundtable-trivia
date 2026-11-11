@@ -39,7 +39,7 @@ module.exports = {
   ANTHROPIC_API_KEY: (process.env.ANTHROPIC_API_KEY || '').trim(),
   AI_CHECK_MODEL: process.env.AI_CHECK_MODEL || 'claude-haiku-5-5',
   // The grading screen waits this long for Claude, then shows the results without its check.
-  AI_CHECK_WAIT_MS: int('AI_CHECK_WAIT_MS', 15000),
+  AI_CHECK_WAIT_MS: int('AI_CHECK_WAIT_MS', 20000),
   MAX_PLAYERS: int('MAX_PLAYERS', 200),
   MAX_GAMES: int('MAX_GAMES', 50),
 };
