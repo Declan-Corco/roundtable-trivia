@@ -11,6 +11,7 @@
 // Claude actually consider each one; an empty list was too easy to return. The host can undo anything.
 // Cost: roughly $0.0005-0.001 per round with Claude Haiku 5.5 (see the README). Answers are sent to Anthropic.
 const config = require('./config');
+const { keyOf } = require('./matcher');
 
 const TIMEOUT_MS = 20000;
 
@@ -27,9 +28,10 @@ function getClient() {
           .array(
             z.object({
               id: z.string().describe('the answer id, e.g. a12'),
+              answer: z.string().describe('the answer text, copied exactly as given for that id'),
               note: z.string().describe('a few words on what this answer is, written BEFORE deciding fits'),
               fits: z.boolean().describe('true if players would accept it as one of the things the category asks for'),
-              same_as: z.string().describe('id of an answer in a DIFFERENT group that means the same thing, or empty'),
+              same_as: z.string().describe('the text of an answer in a DIFFERENT group that means the same thing, copied exactly, or empty'),
             })
           )
           .describe('one verdict for every answer id, in the order given'),
@@ -48,7 +50,7 @@ const SYSTEM = `You referee "Only One", a party game. Each round has a category,
 
 The answers have already been grouped by a quick automatic matcher. Do two things.
 
-1. verdicts - judge EVERY answer. Give one verdict per answer id, with "note", "fits" and "same_as", in that order.
+1. verdicts - judge EVERY answer. Give one verdict per answer id, with "answer", "note", "fits" and "same_as", in that order. "answer" is that id's answer text, copied exactly - it makes sure each verdict lands on the right answer.
 
    note - first, say in a few words what the answer actually is ("an ice-cream flavor", "a polite greeting", "a real chip flavor", "a kitchen appliance"). Write it before you decide "fits"; if the answer doesn't fit, this note is the reason shown to the players, so make it clear.
 
@@ -58,7 +60,7 @@ The answers have already been grouped by a quick automatic matcher. Do two thing
    - false: it means the opposite. Words like "not", "shouldn't", "never", "without", "worst", "least" or "bad" flip the category: for "Things you shouldn't say on a first date", a compliment such as "You look great" does not fit, because it is something you should say.
    - false: it has nothing to do with the category, is nonsense, or is a joke that ignores it.
 
-   same_as - check every answer against the answers in the OTHER groups. If one of them is really the same answer written differently, put its id here; otherwise leave it empty. The same answer means: synonyms (couch / sofa), a brand and the thing it is (Keurig / coffee maker, Xbox / game console, Doritos / chips), abbreviations (TV / television), spelling or plural differences, or the same remark worded differently ("ur ugly" / "you're ugly"). Different kinds of something are different answers (desk lamp / lava lamp, bunk bed / lofted bed).
+   same_as - check every answer against the answers in the OTHER groups. If one of them is really the same answer written differently, copy that answer's text here exactly; otherwise leave it empty. The same answer means: synonyms (couch / sofa), a brand and the thing it is (Keurig / coffee maker, Xbox / game console, Doritos / chips), abbreviations (TV / television), spelling or plural differences, or the same remark worded differently ("ur ugly" / "you're ugly"). Different kinds of something are different answers (desk lamp / lava lamp, bunk bed / lofted bed).
 
 2. split - answers that do not mean the same thing as the rest of their own group (for example "grappling hook" grouped with "gun"). When unsure, leave the group as it is.
 
@@ -92,16 +94,44 @@ async function check(category, groups) {
   if (response.stop_reason === 'max_tokens') throw new Error('the reply was cut off');
   const out = response.parsed_output;
   if (!out) throw new Error("the reply couldn't be read");
-  // Keep only ids that were actually in the request.
+  // Each verdict carries the answer's text as well as its id. Claude occasionally writes a verdict
+  // against the wrong id (judging "spreadsheet" but labelling it "utility belt"), so the text decides:
+  // a mismatched id is relabelled to the answer with that text, or the verdict is dropped if it's unclear.
   const groupOf = new Map(groups.flatMap((g) => g.entries.map((e) => [e.id, g.id])));
-  const verdicts = out.verdicts.filter((v) => groupOf.has(v.id));
-  // "same_as" pairs -> sets of groups to merge (a + b and b + c become one set a + b + c).
+  const textOf = new Map(groups.flatMap((g) => g.entries.map((e) => [e.id, e.text])));
+  const idsByKey = new Map();
+  for (const [id, text] of textOf) {
+    const k = keyOf(text);
+    if (!idsByKey.has(k)) idsByKey.set(k, []);
+    idsByKey.get(k).push(id);
+  }
+  let relabelled = 0;
+  let dropped = 0;
+  const verdicts = [];
+  for (const v of out.verdicts) {
+    const said = keyOf(v.answer || '');
+    if (groupOf.has(v.id) && (!said || keyOf(textOf.get(v.id)) === said)) {
+      verdicts.push(v);
+      continue;
+    }
+    const ids = idsByKey.get(said) || [];
+    if (ids.length) {
+      relabelled++;
+      for (const id of ids) verdicts.push({ ...v, id }); // the same text from several tables gets the same verdict
+    } else {
+      dropped++;
+    }
+  }
+  // "same_as" (by text) -> sets of groups to merge (a + b and b + c become one set a + b + c).
   const parent = new Map();
   const root = (g) => (parent.get(g) && parent.get(g) !== g ? root(parent.get(g)) : g);
   for (const v of verdicts) {
-    if (!v.fits || !groupOf.has(v.same_as)) continue;
-    const a = root(groupOf.get(v.id));
-    const b = root(groupOf.get(v.same_as));
+    if (!v.fits || !v.same_as) continue;
+    const mine = groupOf.get(v.id);
+    const other = (idsByKey.get(keyOf(v.same_as)) || []).map((id) => groupOf.get(id)).find((g) => g !== mine);
+    if (!other) continue;
+    const a = root(mine);
+    const b = root(other);
     if (a !== b) parent.set(b, a);
   }
   const sets = new Map();
@@ -111,11 +141,13 @@ async function check(category, groups) {
     sets.get(r).push(g);
   }
   return {
-    misfits: verdicts.filter((v) => !v.fits).map((v) => ({ id: v.id, why: String(v.note || '').trim().slice(0, 80) })),
+    misfits: [...new Map(verdicts.filter((v) => !v.fits).map((v) => [v.id, { id: v.id, why: String(v.note || '').trim().slice(0, 80) }])).values()],
     merge: [...sets.values()].filter((set) => set.length > 1),
     split: out.split.filter((id) => groupOf.has(id)),
     judged: new Set(verdicts.map((v) => v.id)).size, // how many answers got a verdict (should be all)
     total: groupOf.size,
+    relabelled, // verdicts Claude put on the wrong id, moved to the right answer by its text
+    dropped, // verdicts that matched no answer at all
     usage: response.usage,
     ms: Date.now() - started,
   };

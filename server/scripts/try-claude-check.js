@@ -75,7 +75,8 @@ const ROUNDS = [
     const r = await aicheck.check(round.category, groups);
     cost += aicheck.costOf(r.usage);
     const rejected = r.misfits.map((m) => text[m.id]);
-    console.log(`\n"${round.category}"  (${(r.ms / 1000).toFixed(1)} s, ~$${aicheck.costOf(r.usage).toFixed(5)}, judged ${r.judged}/${r.total})`);
+    const fixes = r.relabelled || r.dropped ? `, fixed ${r.relabelled} mislabelled, ignored ${r.dropped}` : '';
+    console.log(`\n"${round.category}"  (${(r.ms / 1000).toFixed(1)} s, ~$${aicheck.costOf(r.usage).toFixed(5)}, judged ${r.judged}/${r.total}${fixes})`);
     for (const m of r.misfits) console.log(`   ✕ ${text[m.id]}  — ${m.why}`);
     for (const set of r.merge) console.log(`   = merged: ${set.map((g) => groupText[g]).join('  |  ')}`);
     for (const id of r.split) console.log(`   ÷ split out: ${text[id]}`);
