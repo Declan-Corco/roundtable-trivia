@@ -393,30 +393,36 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 /* Setup */
 .setup { width: min(960px, 100%); display: flex; flex-direction: column; gap: 18px; }
 .setup h1 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 650; }
-.set-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.set-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 .set-card {
   text-align: left;
-  padding: 18px;
-  border-radius: var(--radius);
+  padding: 14px 16px;
+  min-height: 96px;
+  border-radius: var(--radius-sm);
   border: 3px solid transparent;
   background: var(--white);
   box-shadow: var(--shadow-card);
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  transition: border-color 0.15s, transform 0.12s, box-shadow 0.12s;
+  gap: 4px;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s, background 0.15s, transform 0.12s, box-shadow 0.12s;
 }
 .set-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
-.set-card.selected { border-color: var(--teal); }
-.set-card strong { font-size: 1.15rem; font-weight: 600; }
+.set-card.selected { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 7%, var(--white)); }
+.set-card strong { font-size: 1.08rem; font-weight: 600; line-height: 1.25; }
 .set-card .count { color: var(--teal); font-weight: 600; font-size: 0.9rem; margin-top: auto; }
-.set-card .desc { color: var(--muted); font-size: 0.95rem; }
-.set-card.upload { border: 3px dashed var(--cream-deep); box-shadow: none; background: transparent; align-items: center; justify-content: center; text-align: center; min-height: 124px; }
+.set-card .desc { color: var(--muted); font-size: 0.9rem; line-height: 1.35; }
+.set-card.upload { border: 3px dashed var(--cream-deep); box-shadow: none; background: transparent; }
+.set-card.upload:hover { border-color: var(--muted); }
 .set-card.upload.selected { border-color: var(--teal); border-style: solid; background: var(--white); }
 .set-card.upload input { display: none; }
-.setup-actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; }
-.setup-actions .input { width: auto; font-size: 1.05rem; padding: 12px; }
+.setup-actions { display: flex; flex-direction: column; gap: 10px; align-items: stretch; text-align: center; }
+.setup-actions .input { font-size: 1.05rem; padding: 12px; }
+.setup-actions .error { margin: 0; }
+.setup-actions .error:empty { display: none; }
 .set-errors { color: #c63521; font-size: 0.9rem; text-align: left; }
 
 /* Setup step 1: game picker */
@@ -460,47 +466,57 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 /* Setup step 2: categories & settings */
 .back-link { align-self: flex-start; background: none; border: 0; padding: 4px 0; color: var(--muted); font-weight: 600; font-size: 1rem; cursor: pointer; }
 .back-link:hover { color: var(--brown-900); }
-.settings-head { display: flex; flex-direction: column; gap: 4px; text-align: left; }
-.settings-head p { margin: 0; }
-.settings-block { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+.host .setup-screen { justify-content: flex-start; padding-bottom: 40px; }
+.setup-wide { width: min(1300px, 100%); }
+.settings-head { display: flex; align-items: center; gap: 20px; text-align: left; }
+.settings-intro { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.settings-head p { margin: 0; max-width: 62ch; line-height: 1.45; }
+.setup-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; align-items: start; margin-top: 6px; }
+.settings-block { display: flex; flex-direction: column; gap: 12px; text-align: left; min-width: 0; }
 .block-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.block-head h2 { margin: 0; font-size: 1.2rem; font-weight: 650; }
+.block-head h2, .setup-panel h2 { margin: 0; font-size: 1.25rem; font-weight: 650; }
+.setup-panel {
+  position: sticky;
+  top: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: var(--shadow-card);
+  text-align: left;
+}
 .set-card { position: relative; }
 .set-card .tick {
   position: absolute;
   top: 12px; right: 12px;
-  width: 26px; height: 26px;
+  width: 24px; height: 24px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   font-size: 0.85rem;
   font-weight: 700;
-  background: var(--cream);
+  border: 2px solid var(--cream-deep);
+  background: transparent;
   color: transparent;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
-.set-card.selected .tick { background: var(--teal); color: var(--tile-ink); }
+.set-card.selected .tick { background: var(--teal); border-color: var(--teal); color: var(--tile-ink); }
 .set-card strong { padding-right: 32px; }
 .link-btn { background: none; border: 0; padding: 0; color: var(--red); font-weight: 600; cursor: pointer; text-decoration: underline; }
-.settings-grid { display: flex; flex-direction: column; gap: 12px; }
-.setting {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  background: var(--white);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-card);
-  padding: 12px 14px 12px 18px;
-}
-.setting-label { font-weight: 600; font-size: 1.05rem; }
-.seg { display: inline-flex; background: var(--cream); border-radius: 999px; padding: 4px; gap: 2px; flex-wrap: wrap; }
+.settings-grid { display: flex; flex-direction: column; gap: 14px; }
+.setting { display: flex; flex-direction: column; gap: 8px; }
+.setting-label { font-weight: 600; font-size: 1rem; }
+.seg { display: flex; background: var(--cream); border-radius: 999px; padding: 4px; gap: 2px; }
 .seg button {
+  flex: 1 1 auto;
+  font: inherit;
+  white-space: nowrap;
   border: 0;
   background: transparent;
   border-radius: 999px;
-  padding: 8px 16px;
+  padding: 7px 10px;
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
@@ -508,14 +524,14 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 }
 .seg button:hover { color: var(--brown-900); }
 .seg button.on { background: var(--brown-900); color: var(--paper); box-shadow: 0 2px 6px -2px rgba(74, 44, 29, 0.5); }
-.round-summary { font-weight: 600; color: var(--muted); }
+.round-summary { font-weight: 600; color: var(--muted); font-size: 0.95rem; padding-top: 14px; border-top: 2px dashed var(--cream-deep); }
 .setting-label small { display: block; font-weight: 500; font-size: 0.85rem; color: var(--muted); }
 
 /* Categories grouped by where they come from (online databases, files on this server) */
-.pack-list { display: flex; flex-direction: column; gap: 18px; }
+.pack-list { display: flex; flex-direction: column; gap: 22px; }
 .source { display: flex; flex-direction: column; gap: 10px; }
 .source-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.source-head strong { font-size: 1.05rem; font-weight: 650; }
+.source-head strong { font-size: 1.1rem; font-weight: 650; }
 .credit-line { margin: 2px 0 0; font-size: 0.85rem; color: var(--muted); }
 .credit-line a { color: inherit; }
 
@@ -708,8 +724,15 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .w-rules { margin: 0; color: var(--muted); font-weight: 500; font-size: 1.1rem; }
 .wager-screen .q-foot { align-self: stretch; }
 
+/* Setup on a narrower screen: settings go under the categories */
+@media (max-width: 980px) {
+  .setup-body { grid-template-columns: 1fr; }
+  .setup-panel { position: static; }
+}
+
 /* Host on a small screen (e.g. hosting from a phone or a portrait tablet) */
 @media (max-width: 860px) {
+  .settings-head .game-art { display: none; }
   .lobby { grid-template-columns: 1fr; }
   #lobby-table { width: min(88vw, 440px); }
   .lobby-side .controls { justify-content: center; }

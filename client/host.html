@@ -29,34 +29,38 @@
   </section>
 
   <!-- 1b. The chosen game's categories and settings -->
-  <section class="screen" id="screen-settings" hidden>
-    <div class="setup">
+  <section class="screen setup-screen" id="screen-settings" hidden>
+    <div class="setup setup-wide">
       <button class="back-link" id="back-to-games" type="button">← All games</button>
       <div class="settings-head">
-        <h1 id="settings-title"></h1>
-        <p class="muted" id="settings-desc"></p>
-      </div>
-
-      <div class="settings-block">
-        <div class="block-head">
-          <h2>Categories</h2>
-          <span class="muted" id="pack-hint">Pick one or more to mix them.</span>
+        <div class="game-art" id="settings-art" aria-hidden="true"></div>
+        <div class="settings-intro">
+          <h1 id="settings-title"></h1>
+          <p class="muted" id="settings-desc"></p>
         </div>
-        <div class="pack-list" id="set-list"></div>
-        <div class="set-errors" id="set-errors"></div>
       </div>
 
-      <div class="settings-block">
-        <div class="block-head"><h2>Settings</h2></div>
-        <div class="settings-grid" id="settings-list"></div>
-      </div>
+      <div class="setup-body">
+        <div class="settings-block">
+          <div class="block-head">
+            <h2>Categories</h2>
+            <span class="muted" id="pack-hint">Pick one or more to mix them.</span>
+          </div>
+          <div class="pack-list" id="set-list"></div>
+          <div class="set-errors" id="set-errors"></div>
+        </div>
 
-      <div class="setup-actions">
-        <span class="round-summary" id="round-summary"></span>
-        <input class="input" type="password" id="host-password" placeholder="Host password" autocomplete="current-password" hidden>
-        <button class="btn btn-primary btn-big" id="create-btn" type="button" disabled>Open the lobby</button>
+        <aside class="setup-panel">
+          <h2>Settings</h2>
+          <div class="settings-grid" id="settings-list"></div>
+          <div class="setup-actions">
+            <span class="round-summary" id="round-summary"></span>
+            <input class="input" type="password" id="host-password" placeholder="Host password" autocomplete="current-password" hidden>
+            <button class="btn btn-primary btn-big btn-block" id="create-btn" type="button" disabled>Open the lobby</button>
+            <p class="error" id="settings-error"></p>
+          </div>
+        </aside>
       </div>
-      <p class="error" id="settings-error"></p>
     </div>
   </section>
 

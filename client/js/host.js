@@ -78,6 +78,7 @@
     }
     choice = { game, packs, upload: null, settings };
 
+    $('#settings-art').replaceWith(Object.assign(gameArt(), { id: 'settings-art' }));
     $('#settings-title').textContent = game.name;
     $('#settings-desc').textContent = game.description;
     $('#settings-error').textContent = '';
