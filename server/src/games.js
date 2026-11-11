@@ -19,7 +19,7 @@ const GAME = {
   description:
     'Everyone starts with 1,000 points. Before each question you see its category and bet some or all ' +
     'of your points. A right answer wins the bet; a wrong one loses it.',
-  defaultPacks: ['otdb:9', 'otdb:11', 'otdb:21'],
+  defaultPacks: sources.listOnline().categories.map((c) => c.id), // every category ticked to start
   settings: [
     {
       id: 'count',
@@ -37,7 +37,7 @@ const GAME = {
         { value: 'medium', label: 'Medium' },
         { value: 'hard', label: 'Hard' },
       ],
-      default: 'any',
+      default: 'easy',
     },
     {
       id: 'wagerTime',

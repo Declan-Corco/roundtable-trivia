@@ -8,7 +8,7 @@
   const socket = io();
   watchConnection(socket);
 
-  const PREFS_KEY = 'rt_host_setup'; // last categories/settings, so hosts don't redo them
+  const PREFS_KEY = 'rt_host_setup_v2'; // last categories/settings, so hosts don't redo them (v2: new defaults)
   let current = null; // last state received from the server
   let stopTimer = null;
   let catalog = []; // games offered by the server (/api/games)
