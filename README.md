@@ -27,7 +27,7 @@ Roundtable/
     └── package.json
 ```
 
-**Features:** lobby with QR code + PIN · remove players · lock the lobby · "get ready" countdown · categories you can mix, and settings (question count, betting time, answer time, order) · bet on each category before the question · 4-colour A/B/C/D answer tiles · answer streaks · double-winnings questions · true/false and multiple-correct questions · answer chart after each question · top-5 scoreboard · podium finish · players and the host can refresh or lose signal and rejoin automatically · works on phones, tablets and desktops · upload a trivia file straight from the host screen · optional host password.
+**Features:** lobby with QR code + PIN · the PIN stays on screen so people can join late, even mid-game · play again with the same table and pick a new game · remove players · lock the lobby · "get ready" countdown · categories you can mix, and settings (question count, betting time, answer time, order) · bet on each category before the question · 4-colour A/B/C/D answer tiles · answer streaks · double-winnings questions · true/false and multiple-correct questions · answer chart after each question · top-5 scoreboard · podium finish · players and the host can refresh or lose signal and rejoin automatically · works on phones, tablets and desktops · upload a trivia file straight from the host screen · optional host password.
 
 ---
 

@@ -39,7 +39,7 @@
       <span class="pc-name" id="lobby-name"></span>
       <span class="pc-title" id="lobby-title"></span>
     </div>
-    <p class="muted">Find your seat at the table on the big screen.<br>The game starts soon.</p>
+    <p class="muted" id="lobby-msg">Find your seat at the table on the big screen.<br>The game starts soon.</p>
     <button class="btn btn-small" id="leave-btn" type="button">Leave game</button>
   </section>
 
@@ -92,9 +92,9 @@
 
   <!-- Joined mid-question -->
   <section class="screen" id="screen-wait" hidden>
-    <p class="big-title">Hang tight</p>
+    <p class="big-title">You're in!</p>
     <div class="spinner"></div>
-    <p class="muted">You'll be playing from the next question.</p>
+    <p class="muted" id="wait-msg">You'll be playing from the next question.</p>
   </section>
 
   <!-- Result of a question -->
@@ -112,7 +112,8 @@
     <p class="muted">You finished</p>
     <div class="final-rank" id="final-rank"></div>
     <p class="rank-text" id="final-detail"></p>
-    <button class="btn btn-primary btn-big" id="again-btn" type="button">Join another game</button>
+    <p class="muted">Stay here if the host is playing again.</p>
+    <button class="btn btn-small" id="again-btn" type="button">Leave this table</button>
   </section>
 
   <!-- Ended / kicked -->

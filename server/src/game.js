@@ -3,12 +3,15 @@
 //
 // Each question runs: bet (the category is shown, everyone bets some of their points)
 // → get ready → answer A-D → reveal (right answers win their bet, wrong ones lose it) → standings.
+//
+// After the last question the host can play again with the same table: everyone goes back to the
+// lobby (same PIN) while the host picks the next game. Players can join at any point.
 const crypto = require('crypto');
 
 const INTRO_MS = 4000; // "Get ready" screen before answers open
 const HOST_GRACE_MS = 2 * 60 * 1000; // host can refresh/reconnect within this window
 const LOBBY_DROP_MS = 60 * 1000; // disconnected players are removed from the lobby after this
-const FINISHED_TTL_MS = 15 * 60 * 1000; // finished games are cleaned up after this
+const FINISHED_TTL_MS = 15 * 60 * 1000; // a finished game whose host has left is cleaned up after this
 const TABLE_MIN_SEATS = 8; // seats drawn around an empty table
 const TABLE_GROW_BY = 4; // seats added each time the table fills up
 const RECONNECT_GRACE_MS = 15 * 1000; // a phase won't end early while a player is reconnecting
@@ -28,6 +31,7 @@ class Game {
     this.gameName = gameName;
     this.wagerTime = wagerTime; // seconds to place a bet
     this.lastReveal = null; // what the host screen shows after a question
+    this.choosing = false; // in the lobby while the host picks the next game (set may be null)
     this.joinUrl = joinUrl;
     this.qr = qr;
     this.maxPlayers = maxPlayers;
@@ -52,10 +56,10 @@ class Game {
     return `game:${this.pin}`;
   }
   get question() {
-    return this.set.questions[this.qIndex];
+    return this.set?.questions[this.qIndex];
   }
   get total() {
-    return this.set.questions.length;
+    return this.set ? this.set.questions.length : 0;
   }
   get isLastQuestion() {
     return this.qIndex >= this.total - 1;
@@ -83,8 +87,11 @@ class Game {
   hostDisconnected(socketId) {
     if (socketId !== this.hostSocketId) return;
     this.hostSocketId = null;
-    if (this.state === 'finished') return;
-    this.hostGraceTimer = setTimeout(() => this.end('The host left the game.'), HOST_GRACE_MS);
+    // On the final screen players can keep looking at their results for a while.
+    this.hostGraceTimer =
+      this.state === 'finished'
+        ? setTimeout(() => this.dispose(), FINISHED_TTL_MS)
+        : setTimeout(() => this.end('The host left the game.'), HOST_GRACE_MS);
   }
 
   isHost(socket) {
@@ -98,7 +105,6 @@ class Game {
   // --------------------------------------------------------------- players
 
   addPlayer(socket, rawName) {
-    if (this.state === 'finished') throw new Error('This game has already finished.');
     if (this.locked) throw new Error('This game is locked by the host.');
     if (this.players.size >= this.maxPlayers) throw new Error('This game is full.');
 
@@ -123,6 +129,7 @@ class Game {
       answer: null, // for the current question: { index, ms }
       wager: null, // the bet on the current question
       lastResult: null,
+      spectator: this.state === 'finished', // joined after the last question: plays from the next game
       socketId: null,
       connected: false,
       disconnectedAt: 0,
@@ -130,6 +137,8 @@ class Game {
     };
     this.players.set(player.id, player);
     this.attachPlayer(socket, player);
+    // Late joiners: let the host know (in the lobby the guest list already shows them).
+    if (this.state !== 'lobby') this.toHost('host:joined', { name: player.name, seat: player.seat });
     return player;
   }
 
@@ -166,16 +175,20 @@ class Game {
     player.connected = false;
     player.socketId = null;
     player.disconnectedAt = Date.now();
-    if (this.state === 'lobby') {
-      player.dropTimer = setTimeout(() => {
-        if (!player.connected && this.state === 'lobby') {
-          this.players.delete(player.id);
-          this.sendLobbyUpdate();
-        }
-      }, LOBBY_DROP_MS);
-    }
+    if (this.state === 'lobby') this.scheduleDrop(player);
     this.sendLobbyUpdate();
     this.checkAllIn();
+  }
+
+  /** In the lobby, a player who has gone (and doesn't come back within a minute) loses their seat. */
+  scheduleDrop(player) {
+    clearTimeout(player.dropTimer);
+    player.dropTimer = setTimeout(() => {
+      if (!player.connected && this.state === 'lobby') {
+        this.players.delete(player.id);
+        this.sendLobbyUpdate();
+      }
+    }, LOBBY_DROP_MS);
   }
 
   kick(playerId) {
@@ -255,7 +268,9 @@ class Game {
   }
 
   leaderboard() {
-    return [...this.players.values()].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    return [...this.players.values()]
+      .filter((p) => !p.spectator)
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
   }
 
   // ------------------------------------------------------------- game flow
@@ -267,8 +282,56 @@ class Game {
 
   start() {
     if (this.state !== 'lobby') throw new Error('The game has already started.');
+    if (this.choosing || !this.set) throw new Error('Pick a game first.');
     if (this.players.size === 0) throw new Error('Wait for at least one player to join.');
     this.nextQuestion();
+  }
+
+  /**
+   * Back to the lobby so the host can pick a (new) game; everyone keeps their seat.
+   * After a finished game the scores reset and the old questions are dropped.
+   */
+  reopen() {
+    if (this.state !== 'finished' && this.state !== 'lobby') throw new Error('Finish this game first.');
+    clearTimeout(this.timer);
+    if (this.state === 'finished') {
+      this.set = null;
+      this.resetScores();
+    }
+    this.state = 'lobby';
+    this.choosing = true;
+    for (const p of this.players.values()) if (!p.connected) this.scheduleDrop(p);
+    this.touch();
+    this.broadcastState();
+  }
+
+  /** The host picked the next game: load its questions and wait in the lobby for "Start". */
+  loadRound({ set, gameName, wagerTime }) {
+    if (this.state !== 'lobby') throw new Error('Finish this game first.');
+    this.set = set;
+    this.gameName = gameName;
+    this.wagerTime = wagerTime;
+    this.choosing = false;
+    this.qIndex = -1;
+    this.resetScores();
+    this.touch();
+    this.broadcastState();
+    console.log(`[game ${this.pin}] next game — ${gameName}: "${set.title}" (${set.questions.length} questions)`);
+  }
+
+  /** The host changed their mind about picking a new game: keep the one already loaded. */
+  cancelChoosing() {
+    if (this.state !== 'lobby' || !this.set) throw new Error('Pick a game first.');
+    this.choosing = false;
+    this.broadcastState();
+  }
+
+  resetScores() {
+    this.qIndex = -1;
+    this.lastReveal = null;
+    for (const p of this.players.values()) {
+      Object.assign(p, { score: START_BANK, streak: 0, correctCount: 0, lastPoints: 0, prevRank: 0, answer: null, wager: null, lastResult: null, spectator: false });
+    }
   }
 
   next() {
@@ -448,8 +511,6 @@ class Game {
     this.state = 'finished';
     this.touch();
     this.broadcastState();
-    clearTimeout(this.hostGraceTimer);
-    this.timer = setTimeout(() => this.dispose(), FINISHED_TTL_MS);
   }
 
   /** Ends the game for everyone with a message. */
@@ -485,7 +546,8 @@ class Game {
     const q = this.question;
     const common = {
       pin: this.pin,
-      title: this.set.title,
+      joinUrl: this.joinUrl,
+      title: this.set?.title || '',
       gameName: this.gameName,
       index: this.qIndex,
       total: this.total,
@@ -496,7 +558,8 @@ class Game {
         payload = {
           phase: 'lobby',
           ...common,
-          joinUrl: this.joinUrl,
+          choosing: this.choosing || !this.set, // the host is picking the next game
+          hasRound: !!this.set,
           qr: this.qr,
           locked: this.locked,
           players: this.publicPlayers(),
@@ -607,7 +670,7 @@ class Game {
     let payload;
     switch (this.state) {
       case 'lobby':
-        payload = { phase: 'lobby', ...base, title: this.set.title };
+        payload = { phase: 'lobby', ...base, title: this.set?.title || '', choosing: this.choosing || !this.set };
         break;
       case 'wager':
         payload =
@@ -642,9 +705,13 @@ class Game {
         break;
       case 'reveal':
       case 'scoreboard':
-        payload = p.lastResult ? { phase: 'result', ...base, ...p.lastResult } : { phase: 'wait', ...base };
+        payload = p.lastResult ? { phase: 'result', ...base, ...p.lastResult } : { phase: 'wait', ...base, until: 'question' };
         break;
       case 'finished': {
+        if (p.spectator) {
+          payload = { phase: 'wait', ...base, until: 'game' };
+          break;
+        }
         const board = this.leaderboard();
         payload = {
           phase: 'finished',

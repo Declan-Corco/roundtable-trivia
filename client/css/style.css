@@ -123,7 +123,23 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 }
 .topbar > * { pointer-events: auto; }
 .topbar .wordmark { font-size: 1.6rem; }
-.topbar .actions { display: flex; gap: 8px; }
+.topbar .actions { display: flex; align-items: center; gap: 8px; }
+/* The PIN, top right, whenever a table is open (so people can join late) */
+.top-pin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 14px;
+  border-radius: 999px;
+  background: var(--white);
+  box-shadow: var(--shadow-card);
+  font-weight: 600;
+}
+.tp-url { color: var(--ink-soft); font-size: 0.95rem; }
+.tp-pin { padding: 5px 14px; border-radius: 999px; background: var(--brown-900); color: var(--paper); font-size: 1.15rem; letter-spacing: 0.04em; }
+.tp-pin small { font-size: 0.7rem; letter-spacing: 0.14em; opacity: 0.75; }
+.final-actions { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.link-btn.quiet { color: var(--ink-soft); align-self: center; }
 
 .card {
   width: min(440px, 100%);
@@ -789,6 +805,8 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
   .q-left .answer { flex-direction: row; text-align: left; padding: 12px 18px 12px 12px; }
   .q-left .answer .fill { left: 0; right: auto; }
   .topbar .wordmark { font-size: 1.3rem; }
+  .tp-url { display: none; }
+  .top-pin { padding-left: 4px; }
 }
 
 /* ================================================================= PLAYER */

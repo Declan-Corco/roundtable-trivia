@@ -126,7 +126,10 @@
         $('#lobby-seat').textContent = `Seat ${s.seat}`;
         $('#lobby-seat').className = `pc-seat s-${RT.seatColor(s.seat)}`;
         $('#lobby-name').textContent = s.name;
-        $('#lobby-title').textContent = `${s.gameName} · ${s.title}`;
+        $('#lobby-title').textContent = s.choosing ? 'Next game coming up' : `${s.gameName} · ${s.title}`;
+        $('#lobby-msg').textContent = s.choosing
+          ? 'The host is picking the next game. Scores start fresh.'
+          : 'Find your seat at the table on the big screen. The game starts soon.';
         return showScreen('screen-lobby');
 
       case 'wager':
@@ -150,6 +153,8 @@
         return renderAnswered(s);
 
       case 'wait':
+        $('#wait-msg').textContent =
+          s.until === 'game' ? "This game just ended. You'll be playing from the next one." : "You'll be playing from the next question.";
         return showScreen('screen-wait');
 
       case 'result':
@@ -161,8 +166,7 @@
           `out of ${s.playerCount} player${s.playerCount === 1 ? '' : 's'} · ${s.score.toLocaleString()} points · ` +
           `${s.correctCount}/${s.total} correct` +
           (s.rank === 1 ? ' 🏆' : s.rank <= 3 ? ' 🎉' : '');
-        clearSession();
-        inGame = true; // keep showing this screen until they choose to leave
+        // Stay at the table: if the host plays again, this phone moves to the lobby by itself.
         return showScreen('screen-final');
     }
   }
@@ -360,7 +364,10 @@
     history.replaceState(null, '', '/join');
     showJoin();
   }
-  $('#again-btn').addEventListener('click', joinFresh);
+  $('#again-btn').addEventListener('click', async () => {
+    await request(socket, 'player:leave');
+    joinFresh();
+  });
   $('#ended-btn').addEventListener('click', joinFresh);
 
   // ------------------------------------------------------------- keep the phone awake during a game

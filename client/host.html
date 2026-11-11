@@ -13,6 +13,10 @@
   <header class="topbar">
     <a class="wordmark" href="/" data-wordmark>roundtable</a>
     <div class="actions">
+      <div class="top-pin" id="top-pin" hidden>
+        <span class="tp-url" id="top-url"></span>
+        <span class="tp-pin"><small>PIN</small> <strong id="top-pin-code"></strong></span>
+      </div>
       <button class="btn btn-small" id="fullscreen-btn" type="button">Fullscreen</button>
       <button class="btn btn-small" id="end-btn" type="button" hidden>End game</button>
     </div>
@@ -21,8 +25,9 @@
   <!-- 1a. Pick a game -->
   <section class="screen" id="screen-setup">
     <div class="setup">
-      <span class="tagline">Set the table</span>
+      <span class="tagline" id="setup-tagline">Set the table</span>
       <h1>Pick a game</h1>
+      <p class="muted" id="setup-note" hidden>Everyone stays seated. Scores start fresh with the next game.</p>
       <div class="game-grid" id="game-list"></div>
       <p class="error" id="setup-error"></p>
     </div>
@@ -57,6 +62,7 @@
             <span class="round-summary" id="round-summary"></span>
             <input class="input" type="password" id="host-password" placeholder="Host password" autocomplete="current-password" hidden>
             <button class="btn btn-primary btn-big btn-block" id="create-btn" type="button" disabled>Open the lobby</button>
+            <button class="link-btn quiet" id="cancel-setup" type="button" hidden>Keep the current game</button>
             <p class="error" id="settings-error"></p>
           </div>
         </aside>
@@ -95,6 +101,7 @@
         <p class="hint" id="kick-hint" hidden>Click a name to remove that player.</p>
         <div class="controls">
           <button class="btn" id="lock-btn" type="button">Lock</button>
+          <button class="btn" id="change-game-btn" type="button">Change game</button>
           <button class="btn btn-primary btn-big" id="start-btn" type="button" disabled>Start the game</button>
         </div>
       </aside>
@@ -185,7 +192,10 @@
     </div>
     <div class="podium" id="podium"></div>
     <p class="runners-up" id="runners-up"></p>
-    <button class="btn btn-primary btn-big" id="new-game-btn" type="button">New game</button>
+    <div class="final-actions">
+      <button class="btn btn-primary btn-big" id="new-game-btn" type="button">Play again</button>
+      <span class="muted">Everyone stays at the table. You pick the next game.</span>
+    </div>
   </section>
 
   <!-- Game ended / error -->

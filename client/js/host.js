@@ -14,12 +14,24 @@
   let catalog = []; // games offered by the server (/api/games)
   let choice = null; // { game, packs: Set<id>, upload: { data, title, count } | null, settings: {} }
 
+  /** True while the table is in the lobby waiting for the host to pick the next game. */
+  const picking = () => current?.phase === 'lobby' && current.choosing;
+
   // ------------------------------------------------------------- setup: 1. pick a game
 
+  /** The game picker: for a brand-new table, or (while `picking()`) the next game for this table. */
   async function showSetup() {
-    current = null;
-    stopTimer?.();
-    $('#end-btn').hidden = true;
+    const next = picking();
+    if (!next) {
+      current = null;
+      stopTimer?.();
+      $('#end-btn').hidden = true;
+      showTopPin(null);
+    }
+    $('#setup-tagline').textContent = next ? 'Next game' : 'Set the table';
+    $('#setup-note').hidden = !next;
+    $('#create-btn').textContent = next ? 'Back to the lobby' : 'Open the lobby';
+    $('#cancel-setup').hidden = !(next && current.hasRound);
     showScreen('screen-setup');
     $('#setup-error').textContent = '';
     try {
@@ -27,7 +39,7 @@
         fetch('/api/config').then((r) => r.json()),
         fetch('/api/games').then((r) => r.json()),
       ]);
-      $('#host-password').hidden = !cfg.needsPassword;
+      $('#host-password').hidden = !cfg.needsPassword || next; // already hosting: no password needed
       catalog = data.games;
       renderGames();
     } catch {
@@ -272,9 +284,10 @@
     btn.textContent = onlineChosen().length ? 'Fetching questions…' : 'Opening…';
     $('#settings-error').textContent = '';
     storage.set(localStorage, PREFS_KEY, { packs: [...choice.packs], settings: choice.settings });
+    const next = picking(); // the same table's next game, or a new table
     const res = await request(
       socket,
-      'host:create',
+      next ? 'host:setup' : 'host:create',
       {
         packs: [...choice.packs],
         customSet: choice.upload?.data,
@@ -289,8 +302,11 @@
       $('#settings-error').textContent = res.error;
       return;
     }
-    storage.set(sessionStorage, SESSION_KEY, { pin: res.pin, token: res.token });
+    // The server now sends the lobby. A new table also gets a session, so a refresh rejoins it.
+    if (!next) storage.set(sessionStorage, SESSION_KEY, { pin: res.pin, token: res.token });
   });
+
+  $('#cancel-setup').addEventListener('click', () => send('host:cancel-setup'));
 
   // ------------------------------------------------------------- server events
 
@@ -323,6 +339,7 @@
       renderAnswerSeats($('#q-seats'), seats, tableSize);
     }
   });
+  socket.on('host:joined', ({ name }) => toast(`${name} joined the table`));
   socket.on('game:ended', ({ reason }) => {
     storage.remove(sessionStorage, SESSION_KEY);
     showEnded(reason);
@@ -333,19 +350,32 @@
     current = null;
     stopTimer?.();
     $('#end-btn').hidden = true;
+    showTopPin(null);
     $('#ended-msg').textContent = message;
     showScreen('screen-ended');
   }
 
   // ------------------------------------------------------------- rendering
 
+  /** The PIN (and where to join) in the top-right corner whenever a table is open, for late joiners. */
+  function showTopPin(s) {
+    $('#top-pin').hidden = !s;
+    if (!s) return;
+    $('#top-url').textContent = s.joinUrl.replace(/^https?:\/\//, '').replace(/\/(join)?\?pin=\d+$/, '');
+    $('#top-pin-code').textContent = s.pin.replace(/(\d{3})(\d{3})/, '$1 $2');
+  }
+
   function render(state) {
+    const wasPicking = picking();
     stopTimer?.();
     stopTimer = null;
     current = state;
     $('#end-btn').hidden = false;
+    showTopPin(state);
     switch (state.phase) {
       case 'lobby':
+        // While the host picks the next game, stay on the picker (don't reset it on every update).
+        if (state.choosing) return wasPicking ? undefined : showSetup();
         return renderLobby(state);
       case 'wager':
         return renderWager(state);
@@ -427,7 +457,6 @@
     if (s.points === 'double') tags.push(el('span', { className: 'chip gold' }, 'Double winnings'));
     if (s.points === 'none') tags.push(el('span', { className: 'chip' }, 'Just for fun'));
     $('#w-tags').replaceChildren(...tags);
-    $('#w-pin').textContent = `Join with PIN ${s.pin}`;
     $('#w-label').textContent = `${s.answered} of ${s.playerCount} bets in`;
     const table = $('#w-table');
     table.classList.remove('low');
@@ -458,7 +487,6 @@
     $('#q-progress').textContent =
       `${s.gameName} · Question ${s.index + 1} of ${s.total}` + (s.points === 'double' ? ' · double winnings' : '');
     $('#q-text').textContent = s.question;
-    $('#q-pin').textContent = `Join with PIN ${s.pin}`;
     // Online questions are credited to their database, as their licenses require.
     $('#q-credit').textContent = s.credit ? `Question: ${s.credit}` : '';
     $('#q-media').replaceChildren(s.image ? el('img', { src: s.image, alt: '' }) : '');
@@ -615,13 +643,15 @@
   $('#w-next').addEventListener('click', () => send('host:next'));
   $('#score-next').addEventListener('click', () => send('host:next'));
   $('#lock-btn').addEventListener('click', () => send('host:lock', { locked: !current?.locked }));
+  // Play again / change game: the table goes back to the lobby while the host picks the next game.
+  $('#change-game-btn').addEventListener('click', () => send('host:reopen'));
+  $('#new-game-btn').addEventListener('click', () => send('host:reopen'));
 
   async function endAndReset() {
     await request(socket, 'host:end');
     storage.remove(sessionStorage, SESSION_KEY);
     showSetup();
   }
-  $('#new-game-btn').addEventListener('click', endAndReset);
   $('#ended-btn').addEventListener('click', showSetup);
   $('#end-btn').addEventListener('click', () => {
     if (current?.phase === 'finished' || confirm('End this game for everyone?')) endAndReset();
