@@ -1,4 +1,4 @@
-// The game a host sets up: trivia with bets. Before each question everyone sees its category
+// The games a host can pick (just Wager Wars for now): trivia with bets. Before each question everyone sees its category
 // and bets some of their points; a right answer wins the bet, a wrong one loses it (see game.js).
 //
 // Question sources:
@@ -13,7 +13,9 @@ const DEFAULT_ONLINE_COUNT = 20; // when a host picks "All" with online categori
 const MAX_ROUND = 50;
 
 const GAME = {
-  name: 'Trivia',
+  id: 'wager',
+  name: 'Wager Wars',
+  tagline: 'See the category, bet your points, then answer.',
   description:
     'Everyone starts with 1,000 points. Before each question you see its category and bet some or all of ' +
     'your points on your phone. A right answer wins the bet; a wrong one loses it. ' +
@@ -67,11 +69,13 @@ const loadPacks = () => loadSets(config.TRIVIA_DIR);
 /** Questions from a pack, labelled with the pack's title as their category (shown before betting). */
 const withCategory = (questions, title) => questions.map((q) => ({ ...q, category: q.category || title }));
 
-/** Everything the host setup screen needs: the categories and settings. */
+/** Everything the host setup screen needs: the game, its categories and settings. */
 function gameInfo() {
   const { sets, errors } = loadPacks();
   return {
+    id: GAME.id,
     name: GAME.name,
+    tagline: GAME.tagline,
     description: GAME.description,
     allowUpload: config.ALLOW_UPLOADS,
     defaultPacks: GAME.defaultPacks,

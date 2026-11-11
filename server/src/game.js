@@ -21,7 +21,7 @@ const newToken = () => crypto.randomBytes(18).toString('base64url');
 const multiplier = (q) => (q.points === 'double' ? 2 : q.points === 'none' ? 0 : 1);
 
 class Game {
-  constructor({ io, pin, set, gameName = 'Trivia', wagerTime = 15, joinUrl, qr, maxPlayers, onDispose }) {
+  constructor({ io, pin, set, gameName = 'Wager Wars', wagerTime = 15, joinUrl, qr, maxPlayers, onDispose }) {
     this.io = io;
     this.pin = pin;
     this.set = set;

@@ -18,12 +18,22 @@
     </div>
   </header>
 
-  <!-- 1. Categories and settings -->
-  <section class="screen" id="screen-settings">
+  <!-- 1a. Pick a game -->
+  <section class="screen" id="screen-setup">
     <div class="setup">
+      <span class="tagline">Set the table</span>
+      <h1>Pick a game</h1>
+      <div class="game-grid" id="game-list"></div>
+      <p class="error" id="setup-error"></p>
+    </div>
+  </section>
+
+  <!-- 1b. The chosen game's categories and settings -->
+  <section class="screen" id="screen-settings" hidden>
+    <div class="setup">
+      <button class="back-link" id="back-to-games" type="button">← All games</button>
       <div class="settings-head">
-        <span class="tagline">Set the table</span>
-        <h1 id="settings-title">Trivia</h1>
+        <h1 id="settings-title"></h1>
         <p class="muted" id="settings-desc"></p>
       </div>
 

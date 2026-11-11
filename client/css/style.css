@@ -419,7 +419,47 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .setup-actions .input { width: auto; font-size: 1.05rem; padding: 12px; }
 .set-errors { color: #c63521; font-size: 0.9rem; text-align: left; }
 
-/* Setup: categories & settings */
+/* Setup step 1: game picker */
+.game-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.game-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 18px;
+  text-align: left;
+  padding: 20px 22px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.game-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }
+.game-card:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+.game-text { display: flex; flex-direction: column; gap: 4px; }
+.game-text strong { font-size: 1.45rem; font-weight: 650; }
+.game-text .desc { color: var(--muted); }
+.game-text .count { color: var(--teal); font-weight: 600; font-size: 0.9rem; }
+.game-card .go { font-size: 1.6rem; color: var(--muted); transition: transform 0.15s; }
+.game-card:hover .go { transform: translateX(4px); color: var(--brown-900); }
+.game-art { position: relative; width: 86px; height: 86px; border-radius: 22px; background: var(--cream); flex: none; }
+.chip-art { /* a stack of betting chips */
+  position: absolute;
+  left: 18px;
+  width: 50px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px dashed rgba(255, 253, 249, 0.75);
+  box-shadow: 0 3px 0 rgba(74, 44, 29, 0.3);
+}
+.chip-art:nth-child(1) { bottom: 18px; }
+.chip-art:nth-child(2) { bottom: 32px; }
+.chip-art:nth-child(3) { bottom: 46px; }
+
+/* Setup step 2: categories & settings */
+.back-link { align-self: flex-start; background: none; border: 0; padding: 4px 0; color: var(--muted); font-weight: 600; font-size: 1rem; cursor: pointer; }
+.back-link:hover { color: var(--brown-900); }
 .settings-head { display: flex; flex-direction: column; gap: 4px; text-align: left; }
 .settings-head p { margin: 0; }
 .settings-block { display: flex; flex-direction: column; gap: 12px; text-align: left; }

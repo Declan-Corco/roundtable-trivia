@@ -11,27 +11,59 @@
   const PREFS_KEY = 'rt_host_setup'; // last categories/settings, so hosts don't redo them
   let current = null; // last state received from the server
   let stopTimer = null;
+  let catalog = []; // games offered by the server (/api/games)
   let choice = null; // { game, packs: Set<id>, upload: { data, title, count } | null, settings: {} }
 
-  // ------------------------------------------------------------- setup: categories & settings
+  // ------------------------------------------------------------- setup: 1. pick a game
 
   async function showSetup() {
     current = null;
     stopTimer?.();
     $('#end-btn').hidden = true;
-    showScreen('screen-settings');
-    $('#settings-error').textContent = '';
+    showScreen('screen-setup');
+    $('#setup-error').textContent = '';
     try {
-      const [cfg, game] = await Promise.all([
+      const [cfg, data] = await Promise.all([
         fetch('/api/config').then((r) => r.json()),
-        fetch('/api/game').then((r) => r.json()),
+        fetch('/api/games').then((r) => r.json()),
       ]);
       $('#host-password').hidden = !cfg.needsPassword;
-      openGame(game);
+      catalog = data.games;
+      renderGames();
     } catch {
-      $('#settings-error').textContent = 'Could not load the categories from the server.';
+      $('#setup-error').textContent = 'Could not load the games from the server.';
     }
   }
+
+  function renderGames() {
+    $('#game-list').replaceChildren(
+      ...catalog.map((g) => {
+        const n = g.packs.length + (g.online?.categories.length || 0);
+        return el(
+          'button',
+          { type: 'button', className: `game-card game-${g.id}`, onclick: () => openGame(g) },
+          gameArt(),
+          el(
+            'div',
+            { className: 'game-text' },
+            el('strong', {}, g.name),
+            el('span', { className: 'desc' }, g.tagline),
+            el('span', { className: 'count' }, `${n} categor${n === 1 ? 'y' : 'ies'}`)
+          ),
+          el('span', { className: 'go', 'aria-hidden': 'true' }, '→')
+        );
+      })
+    );
+  }
+
+  /** The game card's picture: a stack of betting chips. */
+  function gameArt() {
+    const art = el('div', { className: 'game-art', 'aria-hidden': 'true' });
+    ['red', 'teal', 'yellow'].forEach((c) => art.append(el('span', { className: `chip-art s-${c}` })));
+    return art;
+  }
+
+  // ------------------------------------------------------------- setup: 2. categories & settings
 
   function openGame(game) {
     const saved = storage.get(localStorage, PREFS_KEY) || {};
@@ -53,6 +85,7 @@
     renderPacks();
     renderSettings();
     updateSummary();
+    showScreen('screen-settings');
   }
 
   function renderPacks() {
@@ -208,6 +241,8 @@
     $('#round-summary').textContent = text;
     $('#create-btn').disabled = !online && !available;
   }
+
+  $('#back-to-games').addEventListener('click', () => showScreen('screen-setup'));
 
   async function onUpload(e) {
     const file = e.target.files[0];

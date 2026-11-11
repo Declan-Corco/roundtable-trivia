@@ -1,6 +1,6 @@
 # roundtable — pull up a chair
 
-A live trivia night around a round table. The **host** puts a lobby on a big screen with a QR code and game PIN, and players join from their **phones**.
+A live trivia night around a round table, playing **Wager Wars**. The **host** puts a lobby on a big screen with a QR code and game PIN, and players join from their **phones**.
 
 **How a question plays:**
 

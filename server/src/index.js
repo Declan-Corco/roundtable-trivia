@@ -72,10 +72,10 @@ app.get('/api/config', (_req, res) => {
   res.json({ needsPassword: !!config.HOST_PASSWORD, allowUploads: config.ALLOW_UPLOADS });
 });
 
-// The categories and settings for the host setup screen (packs are re-read every time,
+// The games a host can pick, with their categories and settings (packs are re-read every time,
 // so new .json files show up without a restart).
-app.get('/api/game', (_req, res) => {
-  res.json(gameInfo());
+app.get('/api/games', (_req, res) => {
+  res.json({ games: [gameInfo()] });
 });
 
 // Apple universal links: lets the iOS app open /join links (e.g. from the QR code) directly.
@@ -299,7 +299,7 @@ server.listen(config.PORT, config.HOST, () => {
   if (lan) console.log(`  On your LAN:  http://${lan}:${config.PORT}/host`);
   if (config.PUBLIC_URL) console.log(`  Public URL:   ${config.PUBLIC_URL}/host`);
   const info = gameInfo();
-  console.log(`  Categories:   ${info.online.categories.length} from ${info.online.name} + ${info.packs.length} from files`);
+  console.log(`  ${info.name}: ${info.online.categories.length} from ${info.online.name} + ${info.packs.length} from files`);
   for (const e of info.errors) console.warn(`  ! Skipped ${e}`);
   console.log('');
   sources.warmUp(); // fetch an Open Trivia DB session token in the background
