@@ -197,7 +197,7 @@
     </div>
   </section>
 
-  <!-- Only One: grading (the logo spins while answers are matched and Claude checks them) -->
+  <!-- Only One: grading (the logo spins while answers are matched and reviewed) -->
   <section class="screen grading-screen" id="screen-grading" hidden>
     <span class="q-counter" id="gr-progress"></span>
     <h1 class="gr-prompt" id="gr-prompt"></h1>
@@ -205,7 +205,7 @@
     <p class="big-title gr-title">Grading answers…</p>
     <ul class="gr-steps">
       <li id="gr-step-match"><span class="gr-dot" aria-hidden="true"></span>Matching answers that mean the same thing</li>
-      <li id="gr-step-claude"><span class="gr-dot" aria-hidden="true"></span>Claude is double-checking</li>
+      <li id="gr-step-review"><span class="gr-dot" aria-hidden="true"></span>Reviewing answers</li>
     </ul>
     <p class="muted gr-count" id="gr-count"></p>
   </section>
@@ -215,12 +215,17 @@
     <div class="q-top">
       <span class="q-counter" id="rv-progress"></span>
       <h1 class="q-text" id="rv-prompt"></h1>
-      <p class="q-hint" id="rv-hint"></p>
-      <p class="rv-ai" id="rv-ai" hidden></p>
+      <p class="rv-status" id="rv-ai" hidden></p>
     </div>
-    <div class="rv-groups" id="rv-groups"></div>
+    <div class="rv-board" id="rv-groups"></div>
     <div class="q-foot">
-      <span id="rv-summary"></span>
+      <span class="rv-help" id="rv-hint"></span>
+      <div class="rv-bar" id="rv-bar" hidden>
+        <span class="rv-sel" id="rv-sel"></span>
+        <button class="btn btn-small" id="rv-split" type="button">Not the same</button>
+        <button class="btn btn-small" id="rv-reject" type="button">Reject</button>
+        <button class="btn btn-small" id="rv-cancel" type="button">Cancel</button>
+      </div>
       <button class="btn btn-primary" id="rv-next" type="button">Score it</button>
     </div>
   </section>

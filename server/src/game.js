@@ -959,7 +959,7 @@ class Game {
           answerCount: this.entries.size,
           playerCount: this.players.size,
           step: this.gradingStep, // 'matching' | 'checking'
-          claude: aicheck.enabled(), // whether there's a Claude step at all
+          review: aicheck.enabled(), // whether there's a review step at all
         };
         break;
       case 'review': {

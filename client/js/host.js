@@ -703,123 +703,136 @@
     renderListSeats($('#oo-seats'), s.seats, s.tableSize);
   }
 
-  /** Grading: the logo spins while the server matches answers and (with an API key) Claude checks them. */
+  /** Grading: the logo spins while the server matches answers and (when set up) reviews them. */
   function renderGrading(s) {
     $('#gr-progress').textContent = `${s.gameName} · Round ${s.index + 1} of ${s.total}`;
     $('#gr-prompt').textContent = s.question;
     const n = s.answerCount || 0;
     $('#gr-count').textContent = `${n} answer${n === 1 ? '' : 's'} from ${s.playerCount} table${s.playerCount === 1 ? '' : 's'}`;
     const match = $('#gr-step-match');
-    const claude = $('#gr-step-claude');
+    const review = $('#gr-step-review');
     match.className = s.step === 'matching' ? 'active' : 'done';
-    claude.hidden = !s.claude;
-    claude.className = s.step === 'checking' ? 'active' : '';
+    review.hidden = !s.review;
+    review.className = s.step === 'checking' ? 'active' : '';
     showScreen('screen-grading');
   }
 
-  let mergeFrom = null; // review: the group picked to merge into another
+  // ---- Results: the answers in three compact sections (unique, shared, rejected).
+  // Tap an answer to select it; then tap another answer that means the same thing to merge them,
+  // or use the bar: Not the same (split it out), Reject / Allow, Cancel.
 
-  /** The groups, shared ones first. Tap a group then another to merge them; tap an answer to pull it
-   *  out of its group; ✕ rejects an answer that doesn't fit the category. */
+  let selected = null; // the answer (entry id) the host has tapped
+
+  async function reviewEdit(change) {
+    const res = await request(socket, 'host:oo-edit', change);
+    if (!res.ok) toast(res.error);
+  }
+
   function renderReview(s) {
     $('#rv-progress').textContent = `${s.gameName} · Round ${s.index + 1} of ${s.total}`;
     $('#rv-prompt').textContent = s.question;
-    if (!s.groups.some((g) => g.id === mergeFrom)) mergeFrom = null;
-    const order = { shared: 0, unique: 1, rejected: 2 };
-    const groups = [...s.groups].sort(
-      (a, b) => order[a.status] - order[b.status] || b.entries.length - a.entries.length || a.entries[0].text.localeCompare(b.entries[0].text)
-    );
-    const edit = async (change) => {
-      const res = await request(socket, 'host:oo-edit', change);
-      if (!res.ok) toast(res.error);
+    const where = new Map(); // entry id -> { g, e }
+    for (const g of s.groups) for (const e of g.entries) where.set(e.id, { g, e });
+    if (selected && !where.has(selected)) selected = null;
+
+    const tap = (g, e) => {
+      if (selected && selected !== e.id && where.get(selected).g.id !== g.id) {
+        const from = where.get(selected).g.id;
+        selected = null;
+        reviewEdit({ action: 'merge', group: from, into: g.id }); // "these are the same answer"
+        return;
+      }
+      selected = selected === e.id ? null : e.id;
+      renderReview(current);
     };
-    const cards = groups.map((g) =>
+    const chip = (g, e) =>
       el(
-        'div',
+        'button',
         {
-          className: `rv-group ${g.status}${mergeFrom === g.id ? ' picked' : ''}`,
-          role: 'button',
-          tabIndex: 0,
-          title: mergeFrom && mergeFrom !== g.id ? 'Merge into this group' : 'Pick this group to merge it with another',
-          onclick: () => {
-            if (!mergeFrom) mergeFrom = g.id;
-            else if (mergeFrom === g.id) mergeFrom = null;
-            else {
-              const from = mergeFrom;
-              mergeFrom = null;
-              edit({ action: 'merge', group: from, into: g.id });
-              return;
-            }
-            renderReview(current);
-          },
+          type: 'button',
+          className: 'rv-chip' + (e.id === selected ? ' sel' : '') + (e.rejected ? ' rej' : ''),
+          title: `${e.name}${e.ai ? ' · changed in review' : ''}`,
+          onclick: () => tap(g, e),
         },
-        el(
-          'span',
-          { className: 'rv-badge' },
-          g.status === 'unique' ? `+${g.points}` : g.status === 'shared' ? 'Shared' : 'Rejected',
-          g.ai ? el('span', { className: 'ai-tag', title: g.ai === 'merged' ? 'Claude merged these' : 'Claude split this out' }, g.ai === 'merged' ? 'Claude merged' : 'Claude split') : null
-        ),
-        el(
-          'div',
-          { className: 'rv-entries' },
-          ...g.entries.map((e) =>
-            el(
-              'span',
-              { className: 'rv-entry' + (e.rejected ? ' rejected' : '') },
-              el('span', { className: `seat-no s-${seatColor(e.seat)}`, title: e.name }, e.seat || '?'),
-              e.ai && e.rejected ? el('span', { className: 'ai-tag', title: e.why ? `Claude: ${e.why}` : "Claude: doesn't fit the category" }, 'Claude') : null,
-              el(
-                'button',
-                {
-                  type: 'button',
-                  className: 'rv-text',
-                  title: g.entries.length > 1 ? 'Not the same: pull this answer out' : e.name,
-                  onclick: (ev) => {
-                    ev.stopPropagation();
-                    if (g.entries.length > 1) edit({ action: 'split', entry: e.id });
-                  },
-                },
-                e.text
-              ),
-              el(
-                'button',
-                {
-                  type: 'button',
-                  className: 'rv-x',
-                  title: e.rejected ? 'Allow this answer again' : "Doesn't fit the category: reject it",
-                  'aria-label': e.rejected ? `Allow ${e.text}` : `Reject ${e.text}`,
-                  onclick: (ev) => {
-                    ev.stopPropagation();
-                    edit({ action: 'reject', entry: e.id });
-                  },
-                },
-                e.rejected ? '↺' : '✕'
-              )
-            )
+        el('span', { className: `seat-no s-${seatColor(e.seat)}` }, e.seat || '?'),
+        e.text
+      );
+    // One item per group: a single answer, or "Keurig = coffee maker" for answers that count as the same.
+    const item = (g) => {
+      const parts = [];
+      g.entries.forEach((e, i) => {
+        if (i) parts.push(el('span', { className: 'rv-eq', 'aria-hidden': 'true' }, '='));
+        parts.push(chip(g, e));
+      });
+      const reviewed = g.ai || g.entries.some((e) => e.ai);
+      if (reviewed) parts.push(el('span', { className: 'rv-tag', title: 'Changed in review' }, 'reviewed'));
+      return el('span', { className: `rv-item ${g.status}` }, ...parts);
+    };
+    const seatOf = (g) => Math.min(...g.entries.map((e) => e.seat || 99));
+    const byStatus = (st) => s.groups.filter((g) => g.status === st);
+    const unique = byStatus('unique').sort((a, b) => seatOf(a) - seatOf(b) || a.entries[0].text.localeCompare(b.entries[0].text));
+    const shared = byStatus('shared').sort((a, b) => b.entries.length - a.entries.length || a.entries[0].text.localeCompare(b.entries[0].text));
+    const rejected = byStatus('rejected');
+    const section = (cls, title, groups) =>
+      groups.length
+        ? el(
+            'section',
+            { className: `rv-sec ${cls}` },
+            el('h3', {}, title, el('span', { className: 'rv-count' }, String(groups.length))),
+            el('div', { className: 'rv-flow' }, ...groups.map(item))
           )
-        ),
-        // Why Claude rejected an answer, on its own line under the group.
-        ...g.entries.filter((e) => e.ai && e.rejected && e.why).map((e) => el('p', { className: 'rv-why' }, `Claude: ${e.why}`))
-      )
-    );
-    $('#rv-groups').replaceChildren(...(cards.length ? cards : [el('p', { className: 'muted rv-empty' }, 'Nobody wrote anything this round.')]));
-    const count = (st) => s.groups.filter((g) => g.status === st).length;
-    $('#rv-summary').textContent = `${count('unique')} unique · ${count('shared')} shared` + (count('rejected') ? ` · ${count('rejected')} rejected` : '');
-    $('#rv-hint').textContent = mergeFrom
-      ? 'Now tap the group it matches to merge them (or tap it again to cancel).'
-      : 'Tap an answer to pull it out of a group. Tap a group, then another, to merge them. ✕ rejects an answer.';
+        : null;
+    const board = [
+      section('unique', `Unique · +${s.groups.find((g) => g.status === 'unique')?.points ?? 100} each`, unique),
+      section('shared', 'Shared · no points', shared),
+      section('rejected', 'Rejected', rejected),
+    ].filter(Boolean);
+    $('#rv-groups').replaceChildren(...(board.length ? board : [el('p', { className: 'muted rv-empty' }, 'Nobody wrote anything this round.')]));
+
+    // The bar for the selected answer
+    const sel = selected && where.get(selected);
+    $('#rv-bar').hidden = !sel;
+    $('#rv-hint').hidden = !!sel;
+    $('#rv-hint').textContent = 'Tap an answer to change it.';
+    if (sel) {
+      $('#rv-sel').textContent = `“${sel.e.text}” (${sel.e.name}) · tap an answer that means the same, or`;
+      $('#rv-split').hidden = sel.g.entries.length < 2;
+      $('#rv-reject').textContent = sel.e.rejected ? 'Allow' : 'Reject';
+    }
+
     autoLabel($('#rv-next'), s.isLast ? 'Score it · final results' : 'Score it', s.auto);
-    // What Claude did (when the server has an API key and the host left "Claude check" on).
+    // How the review went (only when answers are reviewed on this server)
     const ai = s.ai;
-    const aiLine = $('#rv-ai');
-    aiLine.hidden = !ai;
-    aiLine.className = `rv-ai ${ai?.status || ''}`;
+    const line = $('#rv-ai');
+    line.hidden = !ai;
+    line.className = `rv-status ${ai?.status || ''}`;
     if (ai?.status === 'done') {
-      const did = [ai.rejected && `rejected ${ai.rejected}`, ai.merged && `merged ${ai.merged}`, ai.split && `split ${ai.split}`].filter(Boolean);
-      aiLine.textContent = did.length ? `Claude checked: ${did.join(' · ')}. Tap anything to change it.` : 'Claude checked: no changes needed.';
-    } else if (ai?.status === 'error') aiLine.textContent = `Claude couldn’t check this round (${ai.message}).`;
+      const did = [ai.rejected && `${ai.rejected} rejected`, ai.merged && `${ai.merged} merged`, ai.split && `${ai.split} split`].filter(Boolean);
+      line.textContent = did.length ? `Answers reviewed: ${did.join(' · ')}` : 'Answers reviewed: no changes';
+    } else if (ai?.status === 'error') line.textContent = `Answers couldn’t be reviewed (${ai.message})`;
     showScreen('screen-review');
   }
+
+  $('#rv-cancel').addEventListener('click', () => {
+    selected = null;
+    if (current?.phase === 'review') renderReview(current);
+  });
+  $('#rv-split').addEventListener('click', () => {
+    const id = selected;
+    selected = null;
+    if (id) reviewEdit({ action: 'split', entry: id });
+  });
+  $('#rv-reject').addEventListener('click', () => {
+    const id = selected;
+    selected = null;
+    if (id) reviewEdit({ action: 'reject', entry: id });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && selected && current?.phase === 'review') {
+      selected = null;
+      renderReview(current);
+    }
+  });
 
   // ---- Standings: each player's bar races from their old score to their new one
 

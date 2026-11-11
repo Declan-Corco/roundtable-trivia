@@ -128,7 +128,7 @@ async function check(category, groups) {
       if (err instanceof Anthropic.APIError) throw new Error(`API error ${err.status ?? ''}`.trim());
       throw err;
     }
-    if (response.stop_reason === 'refusal') throw new Error('Claude declined to check this round');
+    if (response.stop_reason === 'refusal') throw new Error('the review was declined');
     if (response.stop_reason === 'max_tokens') throw new Error('the reply was cut off');
     if (!response.parsed_output) throw new Error("the reply couldn't be read");
     return response;
