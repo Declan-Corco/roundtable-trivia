@@ -1,8 +1,10 @@
 # roundtable — pull up a chair
 
-A live trivia night around a round table, playing **Wager Wars**. The **host** puts a lobby on a big screen with a QR code and game PIN, and players join from their **phones**.
+A live party-game night around a round table. The **host** puts a lobby on a big screen with a QR code and game PIN, and players join from their **phones**. The host picks one of two games, and can switch games between rounds without anyone re-joining.
 
-**How a question plays:**
+### Wager Wars
+
+Trivia with bets. **How a question plays:**
 
 1. **Bet.** The big screen shows the next question's category (and difficulty). Everyone bets some or all of their points on their phone. Everyone starts with 1,000, and you can always bet up to 500 even if you have less.
 2. **Answer.** The question appears and everyone answers **A, B, C or D**.
@@ -10,19 +12,32 @@ A live trivia night around a round table, playing **Wager Wars**. The **host** p
 
 Questions come from Open Trivia DB (see below), or from your own files.
 
+### Only One
+
+Each round, the big screen shows a category, like "Things in a dorm room". Every table types as many answers as it can on their phones before the timer runs out. **Any answer another table also wrote scores nothing; every answer only your table thought of scores 100.**
+
+- **The server decides which answers count as the same**, in a few dozen milliseconds:
+  - **Text rules** handle spelling: "Mini fridge" = "minifridge", "Microwaves" = "microwve".
+  - **A small AI model running on the server** handles meaning: "Keurig" = "coffee maker", "TV" = "television", "couch" = "sofa". The model is [bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5), about 34 MB, and runs on the CPU with no API key and no cost per game. It downloads once, the first time the server starts, to `server/data/models/`, and works offline after that.
+- **The host has the final say.** Before scoring, the TV shows the groups. Tap an answer to pull it out of a group, tap two groups to merge them, or ✕ an answer that doesn't fit the category.
+- 230 categories ship in six packs (`server/onlyone/`), and the host can type their own on the setup page.
+- If the AI model can't be installed or loaded, Only One still works: matching falls back to the text rules, and the host merges the rest.
+
 ```
 Roundtable/
 ├── client/              ← the website (plain HTML/CSS/JS, no build step)
 │   ├── index.html       ← landing page: short intro + Join / Host buttons
-│   ├── join.html        ← player screen (phones): join, bet, answer
+│   ├── join.html        ← player screen (phones): join, bet, answer, type answers
 │   ├── host.html        ← host screen (TV/projector/laptop): lobby, questions, scores
 │   ├── css/style.css    ← all styling; brand colours are variables at the top
 │   ├── fonts/           ← Fredoka (SIL Open Font License), served locally
 │   └── js/              ← common.js, host.js, player.js
 └── server/              ← the backend (Node.js + Socket.IO), also serves the website
-    ├── src/             ← index.js (web server), games.js (categories + settings),
-    │                       game.js (game engine), trivia.js (question file loader)
-    ├── trivia/          ← your own categories: one .json file each  ← add your own here
+    ├── src/             ← index.js (web server), games.js (the games, categories + settings),
+    │                       game.js (game engine), matcher.js (Only One answer matching),
+    │                       sources.js (Open Trivia DB question bank), trivia.js (question file loader)
+    ├── trivia/          ← your own Wager Wars questions: one .json file each
+    ├── onlyone/         ← Only One category packs: one .json file each
     ├── setup.sh         ← one-command Linux installer
     └── package.json
 ```
@@ -261,6 +276,17 @@ A new file appears on the host screen the next time the page loads. Hosts can al
 - A file with a mistake is skipped. The host screen tells you which file and which question is wrong.
 
 Full details are in [server/trivia/README.md](server/trivia/README.md).
+
+### Only One categories
+
+Only One packs are `.json` files in `server/onlyone/` (installed: `/opt/roundtable/server/onlyone/`), each a list of prompts:
+
+```json
+{ "title": "College Life", "icon": "🎓", "description": "Dorms, classes, campus and late nights.",
+  "prompts": ["Things in a dorm room", "College majors", "Excuses for missing class"] }
+```
+
+Hosts can also type their own prompts, one per line, on the Only One setup page; those are played first. Details: [server/onlyone/README.md](server/onlyone/README.md).
 
 ---
 

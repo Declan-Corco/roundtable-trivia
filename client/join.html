@@ -70,7 +70,7 @@
     <span class="badge-double" id="intro-double" hidden>Double winnings!</span>
     <span class="chip-line" id="intro-wager" hidden></span>
     <div class="progress"><div id="intro-progress"></div></div>
-    <p class="muted intro-hint">Answers coming up…</p>
+    <p class="muted intro-hint" id="intro-hint">Answers coming up…</p>
   </section>
 
   <!-- Answer buttons -->
@@ -82,6 +82,35 @@
     <div class="progress p-timebar"><div id="p-timebar"></div></div>
     <p class="p-qtext" id="p-qtext"></p>
     <div class="p-answers" id="p-answers"></div>
+  </section>
+
+  <!-- Only One: type as many answers as you can -->
+  <section class="screen input-screen list-screen" id="screen-list" hidden>
+    <div class="p-qhead">
+      <span id="l-counter"></span>
+      <span class="p-timer" id="l-timer"></span>
+    </div>
+    <div class="progress p-timebar"><div id="l-timebar"></div></div>
+    <p class="l-prompt" id="l-prompt"></p>
+    <form class="l-form" id="l-form" autocomplete="off">
+      <input class="input" id="l-input" maxlength="50" placeholder="Type an answer" aria-label="Your answer" autocapitalize="sentences" enterkeyhint="send">
+      <button class="btn btn-primary" id="l-add" type="submit">Add</button>
+    </form>
+    <p class="l-count" id="l-count"></p>
+    <ul class="l-list" id="l-list"></ul>
+    <div class="l-done" id="l-done-box" hidden>
+      <p class="big-title">Done!</p>
+      <p class="muted">Waiting for the other tables…</p>
+    </div>
+    <button class="btn btn-block" id="l-done" type="button">I'm done</button>
+  </section>
+
+  <!-- Only One: the host is checking which answers count as the same -->
+  <section class="screen" id="screen-checking" hidden>
+    <p class="muted" id="c-prompt"></p>
+    <p class="big-title" id="c-title">Comparing answers…</p>
+    <ul class="l-list marks" id="c-list"></ul>
+    <p class="muted" id="c-note"></p>
   </section>
 
   <!-- Waiting after answering -->
@@ -105,6 +134,7 @@
     <p class="big-title" id="result-title"></p>
     <div class="points-pill" id="result-points"></div>
     <p class="result-detail" id="result-detail"></p>
+    <ul class="l-list marks result-list" id="result-list"></ul>
     <div class="streak-pill" id="result-streak"></div>
     <p class="rank-text" id="result-rank"></p>
   </section>

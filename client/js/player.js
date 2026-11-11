@@ -1,5 +1,6 @@
 // Player screen: join with a PIN + nickname, then use the phone as a controller:
-// a bet slider before each question, then A-D answer buttons.
+// Wager Wars: a bet slider before each question, then A-D answer buttons.
+// Only One: type as many answers as you can for the category on the big screen.
 (() => {
   const { $, el, showScreen, request, countdown, toast, watchConnection, storage, ordinal, signed } = window.RT;
   const SESSION_KEY = 'rt_player_session';
@@ -136,7 +137,8 @@
         return renderWager(s);
 
       case 'intro': {
-        $('#intro-counter').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
+        $('#intro-counter').textContent = `${s.gameName} · ${s.unit} ${s.index + 1} of ${s.total}`;
+        $('#intro-hint').textContent = s.kind === 'onlyone' ? 'Get ready to type as many as you can…' : 'Answers coming up…';
         $('#intro-category').textContent = s.category || '';
         $('#intro-question').textContent = s.question || 'Get ready!';
         $('#intro-double').hidden = s.points !== 'double';
@@ -154,6 +156,12 @@
       case 'answered':
         return renderAnswered(s);
 
+      case 'list':
+        return renderList(s);
+
+      case 'checking':
+        return renderChecking(s);
+
       case 'wait':
         $('#wait-msg').textContent =
           s.until === 'game' ? "This game just ended. You'll be playing from the next one." : "You'll be playing from the next question.";
@@ -166,7 +174,7 @@
         $('#final-rank').textContent = ordinal(s.rank);
         $('#final-detail').textContent =
           `out of ${s.playerCount} player${s.playerCount === 1 ? '' : 's'} · ${s.score.toLocaleString()} points · ` +
-          `${s.correctCount}/${s.total} correct` +
+          `${s.stat}` +
           (s.rank === 1 ? ' 🏆' : s.rank <= 3 ? ' 🎉' : '');
         // Stay at the table: if the host plays again, this phone moves to the lobby by itself.
         return showScreen('screen-final');
@@ -294,6 +302,94 @@
     });
   }
 
+  // ---- Only One: type answers, see how they did
+
+  let myList = [];
+  const MARK = { unique: '★', shared: '=', rejected: '✕', repeat: '·' };
+
+  function renderList(s) {
+    startPhase(s);
+    myList = s.list || [];
+    $('#l-counter').textContent = `${s.unit} ${s.index + 1} of ${s.total}`;
+    $('#l-prompt').textContent = s.question;
+    $('#l-done-box').hidden = !s.done;
+    $('#l-form').hidden = s.done;
+    $('#l-done').textContent = s.done ? 'Keep going' : "I'm done";
+    showList();
+    showScreen('screen-list');
+    runTimer('l');
+    if (!s.done && !/iPhone|iPad|Android/.test(navigator.userAgent)) $('#l-input').focus({ preventScroll: true });
+  }
+
+  function showList() {
+    const n = myList.length;
+    $('#l-count').textContent = n ? `${n} answer${n === 1 ? '' : 's'}` : 'Answers only your table writes score 100 each.';
+    $('#l-list').replaceChildren(
+      ...[...myList].reverse().map((a) =>
+        el(
+          'li',
+          {},
+          el('span', {}, a.text),
+          current?.done
+            ? null
+            : el('button', { type: 'button', className: 'l-x', 'aria-label': `Remove ${a.text}`, onclick: () => removeAnswer(a.id) }, '✕')
+        )
+      )
+    );
+  }
+
+  $('#l-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = $('#l-input');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    input.focus({ preventScroll: true });
+    const res = await request(socket, 'player:oo-add', { text });
+    if (!res.ok) {
+      toast(res.error);
+      if (/connection|respond/i.test(res.error)) input.value = text;
+      return;
+    }
+    navigator.vibrate?.(10);
+    myList = res.list;
+    showList();
+  });
+
+  async function removeAnswer(id) {
+    const res = await request(socket, 'player:oo-remove', { id });
+    if (!res.ok) return toast(res.error);
+    myList = res.list;
+    showList();
+  }
+
+  $('#l-done').addEventListener('click', async () => {
+    const res = await request(socket, 'player:oo-done', { done: !current?.done });
+    if (!res.ok) toast(res.error);
+  });
+
+  /** One of your answers with how it did: ★ unique, = shared (with whom), ✕ rejected. */
+  function markRow(m) {
+    const note = m.status === 'shared' && m.with?.length ? `also ${m.with.join(', ')}` : m.status === 'repeat' ? 'same as another of yours' : '';
+    return el(
+      'li',
+      { className: m.status || '' },
+      el('span', { className: 'mark', 'aria-hidden': 'true' }, MARK[m.status] || '…'),
+      el('span', {}, m.text),
+      note ? el('small', {}, note) : null
+    );
+  }
+
+  function renderChecking(s) {
+    const mine = s.mine || [];
+    const grouped = mine.some((m) => m.status);
+    $('#c-prompt').textContent = s.question;
+    $('#c-title').textContent = grouped ? 'The host is checking answers' : 'Comparing answers…';
+    $('#c-list').replaceChildren(...mine.map(markRow));
+    $('#c-note').textContent = mine.length ? (grouped ? '★ only you · = another table too · ✕ rejected' : '') : 'You didn’t write anything this round.';
+    showScreen('screen-checking');
+  }
+
   // ---- Locked in: show what was sent
 
   function renderAnswered(s) {
@@ -316,7 +412,13 @@
     let icon;
     let title;
     let detail;
-    if (!s.answered) {
+    $('#result-list').replaceChildren();
+    if (s.kind === 'onlyone') {
+      icon = s.unique ? '★' : '✗';
+      title = s.unique ? `${s.unique} unique answer${s.unique === 1 ? '' : 's'}!` : s.answered ? 'Nothing unique this time' : "Time's up!";
+      detail = [s.shared && `${s.shared} shared`, s.rejected && `${s.rejected} rejected`].filter(Boolean).join(' · ');
+      $('#result-list').replaceChildren(...(s.mine || []).map(markRow));
+    } else if (!s.answered) {
       icon = '⏱';
       title = "Time's up!";
       detail = s.points < 0 ? `You lost your bet of ${(-s.points).toLocaleString()}.` : '';

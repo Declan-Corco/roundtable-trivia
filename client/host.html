@@ -172,6 +172,45 @@
     </div>
   </section>
 
+  <!-- Only One: the category is up and every table is typing answers -->
+  <section class="screen oo-screen" id="screen-oo" hidden>
+    <div class="q-top">
+      <span class="q-counter" id="oo-progress"></span>
+      <span class="tagline" id="oo-category"></span>
+      <h1 class="oo-prompt" id="oo-prompt"></h1>
+      <p class="w-rules">Write as many as you can. Answers another table also wrote score nothing.</p>
+    </div>
+    <div class="table-wrap w-table" id="oo-table">
+      <div class="seats" id="oo-seats"></div>
+      <svg class="ring" viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="ring-track" cx="100" cy="100" r="90" pathLength="100"/>
+        <circle class="ring-fill" id="oo-ring" cx="100" cy="100" r="90" pathLength="100"/>
+      </svg>
+      <div class="tabletop">
+        <span class="tt-big" id="oo-timer"></span>
+        <span class="tt-sub" id="oo-label"></span>
+      </div>
+    </div>
+    <div class="q-foot">
+      <span></span>
+      <button class="btn" id="oo-next" type="button">Time's up</button>
+    </div>
+  </section>
+
+  <!-- Only One: the host checks which answers count as the same before scoring -->
+  <section class="screen review-screen" id="screen-review" hidden>
+    <div class="q-top">
+      <span class="q-counter" id="rv-progress"></span>
+      <h1 class="q-text" id="rv-prompt"></h1>
+      <p class="q-hint" id="rv-hint"></p>
+    </div>
+    <div class="rv-groups" id="rv-groups"></div>
+    <div class="q-foot">
+      <span id="rv-summary"></span>
+      <button class="btn btn-primary" id="rv-next" type="button">Score it</button>
+    </div>
+  </section>
+
   <!-- 7. Standings: a race chart from old score to new -->
   <section class="screen" id="screen-scoreboard" hidden>
     <div class="standings">

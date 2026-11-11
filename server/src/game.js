@@ -1,12 +1,18 @@
-// One Game = one lobby with one host screen and many players.
+// One Game = one table: one lobby with one host screen and many players.
 // The server is authoritative: it owns the timers, the bets, the answers and the scores.
 //
-// Each question runs: bet (the category is shown, everyone bets some of their points)
-// → get ready → answer A-D → reveal (right answers win their bet, wrong ones lose it) → standings.
+// Two kinds of game run on it (see games.js):
+//   Wager Wars ('wager')  — each question: bet (the category is shown, everyone bets some points)
+//                            → get ready → answer A-D → reveal (right wins the bet, wrong loses it) → standings.
+//   Only One ('onlyone')  — each round: get ready (the category) → every table types as many answers as
+//                            it can → the server groups answers that mean the same thing (matcher.js) →
+//                            the host checks the groups (merge / split / reject) → answers only one table
+//                            wrote score 100 each → standings.
 //
 // After the last question the host can play again with the same table: everyone goes back to the
 // lobby (same PIN) while the host picks the next game. Players can join at any point.
 const crypto = require('crypto');
+const matcher = require('./matcher');
 
 const INTRO_MS = 4000; // "Get ready" screen before answers open
 const HOST_GRACE_MS = 2 * 60 * 1000; // host can refresh/reconnect within this window
@@ -19,19 +25,28 @@ const RECONNECT_GRACE_MS = 15 * 1000; // a phase won't end early while a player 
 const START_BANK = 1000; // everyone starts with this many points to bet with
 const WAGER_FLOOR = 500; // you can always bet up to this much, even with fewer points
 
+// Only One
+const UNIQUE_POINTS = 100; // per answer no other table wrote
+const MAX_LIST = 40; // answers per table per round
+const MAX_ANSWER_LEN = 50;
+
 const newToken = () => crypto.randomBytes(18).toString('base64url');
 /** What a right answer pays per point bet: double-points questions pay 2x, practice questions 0. */
 const multiplier = (q) => (q.points === 'double' ? 2 : q.points === 'none' ? 0 : 1);
 
 class Game {
-  constructor({ io, pin, set, gameName = 'Wager Wars', wagerTime = 15, joinUrl, qr, maxPlayers, onDispose }) {
+  constructor({ io, pin, set, kind = 'wager', gameName = 'Wager Wars', wagerTime = 15, joinUrl, qr, maxPlayers, onDispose }) {
     this.io = io;
     this.pin = pin;
     this.set = set;
+    this.kind = kind; // 'wager' | 'onlyone'
     this.gameName = gameName;
     this.wagerTime = wagerTime; // seconds to place a bet
     this.lastReveal = null; // what the host screen shows after a question
     this.choosing = false; // in the lobby while the host picks the next game (set may be null)
+    this.entries = new Map(); // Only One: this round's answers by id { id, text, playerId, rejected }
+    this.groups = null; // Only One: answers that count as the same [{ id, ids: [entry ids] }]
+    this.seq = 0; // ids for answers and groups
     this.joinUrl = joinUrl;
     this.qr = qr;
     this.maxPlayers = maxPlayers;
@@ -63,6 +78,9 @@ class Game {
   }
   get isLastQuestion() {
     return this.qIndex >= this.total - 1;
+  }
+  get startScore() {
+    return this.kind === 'wager' ? START_BANK : 0;
   }
   touch() {
     this.lastActivity = Date.now();
@@ -122,12 +140,14 @@ class Game {
       token: newToken(),
       name,
       seat: this.freeSeat(), // the lowest empty seat, so leavers' seats get reused
-      score: START_BANK,
+      score: this.startScore,
       streak: 0,
       correctCount: 0,
       lastPoints: 0,
       answer: null, // for the current question: { index, ms }
       wager: null, // the bet on the current question
+      list: [], // Only One: this round's answers [{ id, text, key }]
+      done: false, // Only One: finished typing for this round
       lastResult: null,
       spectator: this.state === 'finished', // joined after the last question: plays from the next game
       socketId: null,
@@ -240,7 +260,8 @@ class Game {
 
   /** Has this player done what the current phase asks: placed a bet (wager) or answered (question)? */
   isIn(p) {
-    return this.state === 'wager' ? p.wager != null : !!p.answer;
+    if (this.state === 'wager') return p.wager != null;
+    return this.kind === 'onlyone' ? p.done : !!p.answer;
   }
 
   /** Seats around the table for the host screen: who is in (wager/question) or what they chose (reveal). */
@@ -248,7 +269,7 @@ class Game {
     return this.seated().map((p) =>
       reveal
         ? { id: p.id, seat: p.seat, name: p.name, choice: p.answer?.index ?? null }
-        : { id: p.id, seat: p.seat, name: p.name, answered: this.isIn(p) }
+        : { id: p.id, seat: p.seat, name: p.name, answered: this.isIn(p), count: p.list.length }
     );
   }
 
@@ -261,10 +282,18 @@ class Game {
     this.toHost('host:answers', {
       phase: this.state,
       answered: this.answeredCount(),
+      answerCount: this.answerCount(),
       playerCount: this.players.size,
       seats: this.seatList(),
       tableSize: this.tableSize(),
     });
+  }
+
+  /** Only One: how many answers have been typed so far this round, across every table. */
+  answerCount() {
+    let n = 0;
+    for (const p of this.players.values()) n += p.list.length;
+    return n;
   }
 
   leaderboard() {
@@ -306,9 +335,10 @@ class Game {
   }
 
   /** The host picked the next game: load its questions and wait in the lobby for "Start". */
-  loadRound({ set, gameName, wagerTime }) {
+  loadRound({ set, kind = 'wager', gameName, wagerTime }) {
     if (this.state !== 'lobby') throw new Error('Finish this game first.');
     this.set = set;
+    this.kind = kind;
     this.gameName = gameName;
     this.wagerTime = wagerTime;
     this.choosing = false;
@@ -329,8 +359,10 @@ class Game {
   resetScores() {
     this.qIndex = -1;
     this.lastReveal = null;
+    this.groups = null;
+    this.entries = new Map();
     for (const p of this.players.values()) {
-      Object.assign(p, { score: START_BANK, streak: 0, correctCount: 0, lastPoints: 0, prevRank: 0, answer: null, wager: null, lastResult: null, spectator: false });
+      Object.assign(p, { score: this.startScore, streak: 0, correctCount: 0, lastPoints: 0, prevRank: 0, answer: null, wager: null, list: [], done: false, lastResult: null, spectator: false });
     }
   }
 
@@ -338,12 +370,16 @@ class Game {
     if (this.state === 'reveal') {
       if (this.isLastQuestion) this.finish();
       else this.showScoreboard();
+    } else if (this.state === 'review') {
+      this.scoreRound(); // Only One: the host is happy with the groups
+      if (this.isLastQuestion) this.finish();
+      else this.showScoreboard();
     } else if (this.state === 'scoreboard') {
       this.nextQuestion();
     } else if (this.state === 'wager') {
       this.startIntro(); // "Close bets" — anyone who hasn't bet is betting nothing
     } else if (this.state === 'question') {
-      this.reveal(); // "Skip" — end the question now
+      this.closeAnswers(); // "Skip" / "Time's up" — end the question now
     }
   }
 
@@ -353,8 +389,13 @@ class Game {
     for (const p of this.players.values()) {
       p.answer = null;
       p.wager = null;
+      p.list = [];
+      p.done = false;
     }
-    this.openWagers();
+    this.groups = null;
+    this.entries = new Map();
+    if (this.kind === 'wager') this.openWagers();
+    else this.startIntro();
   }
 
   /** Shows the next question's category and lets everyone bet before it's asked. */
@@ -402,7 +443,13 @@ class Game {
     this.questionStartedAt = Date.now();
     this.phaseEndsAt = this.questionStartedAt + q.time * 1000;
     this.broadcastState();
-    this.timer = setTimeout(() => this.reveal(), q.time * 1000 + 250); // small grace for latency
+    this.timer = setTimeout(() => this.closeAnswers(), q.time * 1000 + 250); // small grace for latency
+  }
+
+  /** Time's up (or everyone is in): score the question, or for Only One, group the answers. */
+  closeAnswers() {
+    if (this.kind === 'onlyone') this.review();
+    else this.reveal();
   }
 
   submitAnswer(playerId, index) {
@@ -436,10 +483,184 @@ class Game {
     );
     if (!active.length || !active.every((p) => this.isIn(p))) return;
     if (this.state === 'wager') this.startIntro();
-    else this.reveal();
+    else this.closeAnswers();
   }
 
   // ------------------------------------------------------------- scoring
+
+  /** After scoring: each player's place and who's just ahead, and everyone's rank before this round. */
+  rankResults() {
+    [...this.players.values()]
+      .sort((a, b) => b.score - b.lastPoints - (a.score - a.lastPoints) || a.name.localeCompare(b.name))
+      .forEach((p, i) => (p.prevRank = i + 1));
+    const board = this.leaderboard();
+    board.forEach((p, i) => {
+      const ahead = board[i - 1];
+      Object.assign(p.lastResult, {
+        rank: i + 1,
+        playerCount: board.length,
+        behindName: ahead ? ahead.name : null,
+        behindBy: ahead ? ahead.score - p.score : 0,
+      });
+    });
+  }
+
+  // ------------------------------------------------------------- Only One
+
+  playerFor(playerId) {
+    const player = this.players.get(playerId);
+    if (!player) throw new Error('You are not in this game.');
+    return player;
+  }
+
+  publicList(p) {
+    return p.list.map(({ id, text }) => ({ id, text }));
+  }
+
+  addListAnswer(playerId, raw) {
+    if (this.kind !== 'onlyone' || this.state !== 'question') throw new Error("Time's up for this round.");
+    const p = this.playerFor(playerId);
+    const text = String(raw ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_ANSWER_LEN);
+    const key = matcher.keyOf(text);
+    if (!key) throw new Error('Type an answer first.');
+    if (p.list.length >= MAX_LIST) throw new Error(`That's ${MAX_LIST} answers, the most for one round.`);
+    if (p.list.some((a) => a.key === key)) throw new Error('You already have that one.');
+    p.list.push({ id: `a${++this.seq}`, text, key });
+    this.touch();
+    this.sendProgress();
+    return { list: this.publicList(p) };
+  }
+
+  removeListAnswer(playerId, id) {
+    if (this.kind !== 'onlyone' || this.state !== 'question') throw new Error("Time's up for this round.");
+    const p = this.playerFor(playerId);
+    p.list = p.list.filter((a) => a.id !== String(id));
+    this.touch();
+    this.sendProgress();
+    return { list: this.publicList(p) };
+  }
+
+  /** "I'm done" (or "keep going"). Once every table is done the round ends early. */
+  setListDone(playerId, done) {
+    if (this.kind !== 'onlyone' || this.state !== 'question') throw new Error("Time's up for this round.");
+    const p = this.playerFor(playerId);
+    p.done = !!done;
+    this.touch();
+    this.sendPlayerState(p);
+    this.sendProgress();
+    this.checkAllIn();
+  }
+
+  /** Groups this round's answers (rules + the local model, see matcher.js), then shows them to the host. */
+  async review() {
+    if (this.state !== 'question') return;
+    clearTimeout(this.timer);
+    this.state = 'grouping';
+    this.touch();
+    this.broadcastState();
+    const entries = [];
+    for (const p of this.players.values()) for (const a of p.list) entries.push({ id: a.id, text: a.text, playerId: p.id, rejected: false });
+    this.entries = new Map(entries.map((e) => [e.id, e]));
+    let grouped;
+    try {
+      grouped = await matcher.group(entries, this.question.question);
+    } catch (err) {
+      console.warn(`[game ${this.pin}] grouping failed, every answer stands alone: ${err.message}`);
+      grouped = entries.map((e) => [e.id]);
+    }
+    if (this.disposed || this.state !== 'grouping') return;
+    this.groups = grouped.map((ids) => ({ id: `g${++this.seq}`, ids }));
+    this.state = 'review';
+    this.touch();
+    this.broadcastState();
+  }
+
+  /** 'unique' (one table wrote it: it scores), 'shared' (several did: nobody scores) or 'rejected'. */
+  groupStatus(g) {
+    const tables = new Set(g.ids.map((id) => this.entries.get(id)).filter((e) => e && !e.rejected).map((e) => e.playerId));
+    return tables.size === 0 ? 'rejected' : tables.size === 1 ? 'unique' : 'shared';
+  }
+
+  /**
+   * The host fixes the grouping before scoring:
+   *   { action: 'merge', group, into }  — these two groups are the same answer
+   *   { action: 'split', entry }        — this answer isn't the same as the rest of its group
+   *   { action: 'reject', entry }       — this answer doesn't fit the category (again to undo)
+   */
+  editGroups({ action, group, into, entry } = {}) {
+    if (this.kind !== 'onlyone' || this.state !== 'review') throw new Error('Nothing to check right now.');
+    const find = (gid) => this.groups.find((g) => g.id === String(gid));
+    if (action === 'merge') {
+      const from = find(group);
+      const to = find(into);
+      if (!from || !to || from === to) throw new Error('Pick two different groups to merge.');
+      to.ids.push(...from.ids);
+      this.groups = this.groups.filter((g) => g !== from);
+    } else if (action === 'split') {
+      const g = this.groups.find((x) => x.ids.includes(String(entry)));
+      if (!g || g.ids.length < 2) throw new Error('That answer is already on its own.');
+      g.ids = g.ids.filter((id) => id !== String(entry));
+      this.groups.splice(this.groups.indexOf(g) + 1, 0, { id: `g${++this.seq}`, ids: [String(entry)] });
+    } else if (action === 'reject') {
+      const e = this.entries.get(String(entry));
+      if (!e) throw new Error('That answer is gone.');
+      e.rejected = !e.rejected;
+    } else {
+      throw new Error('Unknown change.');
+    }
+    this.touch();
+    this.broadcastState();
+  }
+
+  /** How each of this player's answers did: unique (scores), repeat (their own duplicate), shared or rejected. */
+  myStatuses(p) {
+    if (!this.groups) return p.list.map((a) => ({ text: a.text, status: null }));
+    const counted = new Set(); // unique groups already credited to this player
+    return p.list.map((a) => {
+      const e = this.entries.get(a.id);
+      const g = this.groups.find((x) => x.ids.includes(a.id));
+      if (!e || !g) return { text: a.text, status: null };
+      if (e.rejected) return { text: a.text, status: 'rejected' };
+      const status = this.groupStatus(g);
+      if (status === 'unique') {
+        if (counted.has(g.id)) return { text: a.text, status: 'repeat' };
+        counted.add(g.id);
+        return { text: a.text, status: 'unique' };
+      }
+      const others = [...new Set(g.ids.map((id) => this.entries.get(id)).filter((x) => x && !x.rejected && x.playerId !== p.id).map((x) => this.players.get(x.playerId)?.name).filter(Boolean))];
+      return { text: a.text, status: 'shared', with: others };
+    });
+  }
+
+  /** Each answer only one table wrote scores UNIQUE_POINTS for that table. */
+  scoreRound() {
+    const points = new Map();
+    for (const g of this.groups || []) {
+      if (this.groupStatus(g) !== 'unique') continue;
+      const e = g.ids.map((id) => this.entries.get(id)).find((x) => x && !x.rejected);
+      points.set(e.playerId, (points.get(e.playerId) || 0) + 1);
+    }
+    for (const p of this.players.values()) {
+      const unique = points.get(p.id) || 0;
+      const mine = this.myStatuses(p);
+      p.lastPoints = unique * UNIQUE_POINTS;
+      p.score += p.lastPoints;
+      p.correctCount += unique;
+      p.streak = 0;
+      p.lastResult = {
+        kind: 'onlyone',
+        answered: p.list.length > 0,
+        correct: unique > 0,
+        points: p.lastPoints,
+        unique,
+        shared: mine.filter((m) => m.status === 'shared').length,
+        rejected: mine.filter((m) => m.status === 'rejected').length,
+        mine,
+        streak: 0,
+      };
+    }
+    this.rankResults();
+  }
 
   /** Right answers win their bet (twice over on a double-points question); wrong or no answer loses it. */
   reveal() {
@@ -463,24 +684,9 @@ class Game {
       }
       p.score += points;
       p.lastPoints = points;
-      p.lastResult = { answered: !!p.answer, correct, wager, points, streak: p.streak };
+      p.lastResult = { kind: 'wager', answered: !!p.answer, correct, wager, points, streak: p.streak };
     }
-
-    // Rank before this question, so the standings can show who moved up or down.
-    [...this.players.values()]
-      .sort((a, b) => b.score - b.lastPoints - (a.score - a.lastPoints) || a.name.localeCompare(b.name))
-      .forEach((p, i) => (p.prevRank = i + 1));
-
-    const board = this.leaderboard();
-    board.forEach((p, i) => {
-      const ahead = board[i - 1];
-      Object.assign(p.lastResult, {
-        rank: i + 1,
-        playerCount: board.length,
-        behindName: ahead ? ahead.name : null,
-        behindBy: ahead ? ahead.score - p.score : 0,
-      });
-    });
+    this.rankResults();
 
     // The biggest swing each way, for a line on the host screen.
     const swings = this.seated().map((p) => ({ name: p.name, seat: p.seat, points: p.lastPoints }));
@@ -548,6 +754,8 @@ class Game {
       pin: this.pin,
       joinUrl: this.joinUrl,
       title: this.set?.title || '',
+      kind: this.kind,
+      unit: this.kind === 'onlyone' ? 'Round' : 'Question',
       gameName: this.gameName,
       index: this.qIndex,
       total: this.total,
@@ -592,10 +800,12 @@ class Game {
           credit: q.credit || null, // e.g. "Open Trivia DB · CC BY-SA 4.0" for online questions
           image: q.image,
           answers: q.answers,
+          category: q.category || null,
           points: q.points,
           time: q.time,
           timeLeft: this.timeLeft(),
           answered: this.answeredCount(),
+          answerCount: this.answerCount(),
           playerCount: this.players.size,
           seats: this.seatList(),
           tableSize: this.tableSize(),
@@ -615,6 +825,34 @@ class Game {
           ...this.lastReveal,
         };
         break;
+      case 'grouping':
+        payload = { phase: 'grouping', ...common, question: q.question, category: q.category || null, answerCount: this.entries.size };
+        break;
+      case 'review': {
+        const groups = this.groups.map((g) => {
+          const status = this.groupStatus(g);
+          return {
+            id: g.id,
+            status,
+            points: status === 'unique' ? UNIQUE_POINTS : 0,
+            entries: g.ids.map((id) => {
+              const e = this.entries.get(id);
+              const p = this.players.get(e.playerId);
+              return { id, text: e.text, rejected: e.rejected, seat: p?.seat ?? 0, name: p?.name ?? 'Left the game' };
+            }),
+          };
+        });
+        payload = {
+          phase: 'review',
+          ...common,
+          question: q.question,
+          category: q.category || null,
+          groups,
+          isLast: this.isLastQuestion,
+          playerCount: this.players.size,
+        };
+        break;
+      }
       case 'scoreboard': {
         const board = this.leaderboard();
         payload = {
@@ -637,7 +875,7 @@ class Game {
         payload = {
           phase: 'finished',
           ...common,
-          podium: this.leaderboard().slice(0, 5).map((p) => ({ name: p.name, seat: p.seat, score: p.score, correct: p.correctCount })),
+          podium: this.leaderboard().slice(0, 5).map((p) => ({ name: p.name, seat: p.seat, score: p.score, correct: p.correctCount, stat: this.statText(p) })),
           playerCount: this.players.size,
         };
         break;
@@ -645,8 +883,16 @@ class Game {
     this.toHost('host:state', payload);
   }
 
+  /** The line under a final score: "7/10 correct" or "12 unique answers". */
+  statText(p) {
+    if (this.kind === 'onlyone') return `${p.correctCount} unique answer${p.correctCount === 1 ? '' : 's'}`;
+    return `${p.correctCount}/${this.total} correct`;
+  }
+
   playerBase(p) {
     return {
+      kind: this.kind,
+      unit: this.kind === 'onlyone' ? 'Round' : 'Question',
       pin: this.pin,
       name: p.name,
       seat: p.seat,
@@ -688,9 +934,21 @@ class Game {
               };
         break;
       case 'intro':
-        payload = { phase: 'intro', ...base, question: q.question, category: q.category || null, timeLeft: this.timeLeft(), points: q.points, wager: p.wager ?? 0 };
+        payload = {
+          phase: 'intro',
+          ...base,
+          question: q.question,
+          category: q.category || null,
+          timeLeft: this.timeLeft(),
+          points: q.points,
+          wager: this.kind === 'wager' ? p.wager ?? 0 : null,
+        };
         break;
       case 'question':
+        if (this.kind === 'onlyone') {
+          payload = { phase: 'list', ...base, question: q.question, category: q.category || null, time: q.time, timeLeft: this.timeLeft(), list: this.publicList(p), done: p.done };
+          break;
+        }
         payload = p.answer
           ? { phase: 'answered', ...base, mine: this.mine(p) }
           : {
@@ -702,6 +960,10 @@ class Game {
               time: q.time,
               timeLeft: this.timeLeft(),
             };
+        break;
+      case 'grouping':
+      case 'review':
+        payload = { phase: 'checking', ...base, question: q.question, mine: this.myStatuses(p) };
         break;
       case 'reveal':
       case 'scoreboard':
@@ -719,6 +981,7 @@ class Game {
           rank: board.indexOf(p) + 1,
           playerCount: board.length,
           correctCount: p.correctCount,
+          stat: this.statText(p),
         };
         break;
       }

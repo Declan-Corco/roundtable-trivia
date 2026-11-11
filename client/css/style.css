@@ -294,6 +294,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .seat.taken { box-shadow: 0 3px 0 rgba(74, 44, 29, 0.22); }
 .seat.away { opacity: 0.35; }
 .seat.pop, .seat.in { animation: pop 0.4s ease both; }
+.seat.typing { opacity: 0.5; }
 .seat.none { background: var(--cream-deep); color: transparent; opacity: 0.6; }
 .seat.c0 { background: var(--a0); box-shadow: 0 3px 0 var(--a0-edge); }
 .seat.c1 { background: var(--a1); box-shadow: 0 3px 0 var(--a1-edge); }
@@ -443,6 +444,25 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .game-card .go { font-size: 1.6rem; color: var(--muted); transition: transform 0.15s; }
 .game-card:hover .go { transform: translateX(4px); color: var(--brown-900); }
 .game-art { position: relative; width: 86px; height: 86px; border-radius: 22px; background: var(--cream); flex: none; }
+.art-onlyone { display: grid; place-items: center; }
+.oo-art-one {
+  position: relative;
+  z-index: 1;
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--teal);
+  color: var(--white);
+  font-size: 1.9rem;
+  font-weight: 700;
+  box-shadow: 0 3px 0 var(--a1-edge);
+}
+.oo-art-x { position: absolute; width: 30px; height: 10px; border-radius: 5px; background: var(--cream-deep); }
+.oo-art-x:nth-child(1) { top: 16px; left: 10px; transform: rotate(-12deg); }
+.oo-art-x:nth-child(2) { bottom: 16px; right: 10px; transform: rotate(10deg); }
+.oo-art-x::after { content: ""; position: absolute; left: -2px; right: -2px; top: 4px; height: 2px; background: var(--red); }
 .chip-art { /* a stack of betting chips */
   position: absolute;
   left: 18px;
@@ -789,6 +809,57 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .w-rules { margin: 0; color: var(--muted); font-weight: 500; font-size: 1.1rem; }
 .wager-screen .q-foot { align-self: stretch; }
 
+/* Only One on the big screen: the category while tables type */
+.host .oo-screen { gap: 14px; padding: 16px 20px; }
+.oo-screen .q-foot { align-self: stretch; }
+.oo-screen .tagline:empty { display: none; }
+.oo-prompt { margin: 0; font-size: clamp(2.2rem, 5.5vw, 4.4rem); font-weight: 650; line-height: 1.1; animation: pop-in 0.45s ease; }
+.custom-prompts { resize: vertical; min-height: 84px; font-size: 1rem; text-align: left; }
+
+/* Only One review: groups of answers that count as the same */
+.host .review-screen { justify-content: flex-start; align-items: stretch; gap: 14px; padding: 16px 20px; }
+.review-screen .q-top { text-align: center; }
+.rv-groups {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  align-content: start;
+  align-items: start;
+  gap: 12px;
+  width: min(1400px, 100%);
+  align-self: center;
+}
+.rv-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--cream-deep);
+  background: var(--white);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+.rv-group:hover { border-color: #dcc6ab; }
+.rv-group.unique { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 8%, var(--white)); }
+.rv-group.shared { background: var(--cream); }
+.rv-group.rejected { opacity: 0.55; }
+.rv-group.picked { box-shadow: 0 0 0 4px var(--yellow); transform: translateY(-2px); }
+.rv-badge { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); }
+.rv-group.unique .rv-badge { color: var(--teal-ink); font-size: 1rem; letter-spacing: 0; }
+.rv-entries { display: flex; flex-wrap: wrap; gap: 6px; }
+.rv-entry { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 4px; border-radius: 999px; background: var(--white); box-shadow: 0 1px 2px rgba(74, 44, 29, 0.15); }
+.rv-entry .seat-no { width: 22px; height: 22px; font-size: 0.75rem; }
+.rv-text { border: 0; background: none; padding: 0 2px; font: inherit; font-weight: 600; font-size: 1.05rem; color: var(--brown-900); cursor: pointer; }
+.rv-group.shared .rv-text { text-decoration: line-through; text-decoration-color: rgba(74, 44, 29, 0.45); }
+.rv-entry.rejected .rv-text { text-decoration: line-through; color: var(--muted); }
+.rv-x { width: 24px; height: 24px; border: 0; border-radius: 50%; background: var(--cream); color: var(--ink-soft); font-weight: 700; cursor: pointer; }
+.rv-x:hover { background: var(--red); color: var(--white); }
+.rv-empty { grid-column: 1 / -1; text-align: center; font-size: 1.2rem; }
+.review-screen .q-foot { align-self: stretch; }
+
 /* Setup on a narrower screen: settings go under the categories */
 @media (max-width: 980px) {
   .setup-body { grid-template-columns: 1fr; }
@@ -890,6 +961,31 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .p-answers.locked .answer:not(.chosen) { opacity: 0.3; }
 .p-answers.single { flex: none; width: min(380px, 100%); }
 .p-answers.single .answer { min-height: 76px; }
+
+/* Only One on the phone: type answers into a list */
+.player .list-screen { justify-content: flex-start; align-items: stretch; padding: 14px 14px 80px; gap: 10px; }
+.l-prompt { margin: 6px 0 2px; font-size: clamp(1.4rem, 6.5vw, 2rem); font-weight: 650; line-height: 1.15; text-align: center; overflow-wrap: anywhere; }
+.l-form { display: flex; gap: 8px; }
+.l-form .input { flex: 1; min-width: 0; font-size: 1.15rem; padding: 12px 14px; }
+.l-form .btn { flex: none; }
+.l-count { margin: 0; color: var(--ink-soft); font-weight: 500; text-align: center; }
+.l-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.l-list li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 6px 6px 14px; border-radius: 999px; background: var(--white); box-shadow: var(--shadow-card); font-weight: 600; animation: pop-in 0.25s ease; }
+.l-x { width: 26px; height: 26px; border: 0; border-radius: 50%; background: var(--cream); color: var(--ink-soft); font-weight: 700; cursor: pointer; }
+.l-done { text-align: center; }
+.l-done .big-title { margin: 6px 0 0; }
+.list-screen #l-done { margin-top: auto; }
+/* How each answer did: ★ only you, = shared, ✕ rejected */
+.l-list.marks { flex-direction: column; align-items: stretch; max-width: 420px; width: 100%; align-self: center; }
+.l-list.marks li { padding: 8px 14px; border-radius: var(--radius-sm); justify-content: flex-start; text-align: left; }
+.l-list.marks .mark { width: 1.4em; text-align: center; font-weight: 700; }
+.l-list.marks small { margin-left: auto; color: var(--ink-soft); font-weight: 500; }
+.l-list.marks li.unique { background: color-mix(in srgb, var(--teal) 14%, var(--white)); }
+.l-list.marks li.unique .mark { color: var(--teal-ink); }
+.l-list.marks li.shared span:not(.mark), .l-list.marks li.rejected span:not(.mark) { text-decoration: line-through; color: var(--ink-soft); }
+.l-list.marks li.rejected .mark { color: var(--red); }
+.result-list:empty { display: none; }
+.result-screen .l-list.marks li { color: var(--brown-900); }
 
 /* The bet slider */
 .player .input-screen { justify-content: stretch; align-items: stretch; padding: 14px 14px 80px; gap: 10px; }

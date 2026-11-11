@@ -9,7 +9,8 @@ const { Server } = require('socket.io');
 const QRCode = require('qrcode');
 
 const config = require('./config');
-const { gameInfo, buildRound } = require('./games');
+const { listGames, buildRound } = require('./games');
+const matcher = require('./matcher');
 const sources = require('./sources');
 const { Game } = require('./game');
 
@@ -75,7 +76,7 @@ app.get('/api/config', (_req, res) => {
 // The games a host can pick, with their categories and settings (packs are re-read every time,
 // so new .json files show up without a restart).
 app.get('/api/games', (_req, res) => {
-  res.json({ games: [gameInfo()] });
+  res.json({ games: listGames() });
 });
 
 // Apple universal links: lets the iOS app open /join links (e.g. from the QR code) directly.
@@ -169,7 +170,7 @@ io.on('connection', (socket) => {
 
   socket.on(
     'host:create',
-    handler(async ({ packs, customSet, settings, password }) => {
+    handler(async ({ game: gameId, packs, customSet, customPrompts, settings, password }) => {
       if (config.HOST_PASSWORD && !safeEqual(password || '', config.HOST_PASSWORD)) {
         throw new Error('Wrong host password.');
       }
@@ -177,7 +178,7 @@ io.on('connection', (socket) => {
 
       // The chosen categories + settings → the questions for this round (see games.js).
       // Online categories are fetched live here, which can take a few seconds.
-      const { game: def, round: set, settings: chosen } = await buildRound({ packs, customSet, settings });
+      const { game: def, round: set, settings: chosen } = await buildRound({ game: gameId, packs, customSet, customPrompts, settings });
 
       const pin = newPin();
       const joinUrl = `${baseUrlFor(socket)}/join?pin=${pin}`;
@@ -186,6 +187,7 @@ io.on('connection', (socket) => {
         io,
         pin,
         set,
+        kind: def.kind,
         gameName: def.name,
         wagerTime: chosen.wagerTime,
         joinUrl,
@@ -213,15 +215,17 @@ io.on('connection', (socket) => {
   socket.on('host:reopen', handler(async () => hostGame().reopen()));
   socket.on(
     'host:setup',
-    handler(async ({ packs, customSet, settings }) => {
+    handler(async ({ game: gameId, packs, customSet, customPrompts, settings }) => {
       const game = hostGame();
       if (game.state !== 'lobby') throw new Error('Finish this game first.');
-      const { game: def, round: set, settings: chosen } = await buildRound({ packs, customSet, settings });
+      const { game: def, round: set, settings: chosen } = await buildRound({ game: gameId, packs, customSet, customPrompts, settings });
       if (game.disposed) throw new Error('That game is no longer running.');
-      game.loadRound({ set, gameName: def.name, wagerTime: chosen.wagerTime });
+      game.loadRound({ set, kind: def.kind, gameName: def.name, wagerTime: chosen.wagerTime });
     })
   );
   socket.on('host:cancel-setup', handler(async () => hostGame().cancelChoosing()));
+  // Only One review: the host merges, splits or rejects answers before the round is scored.
+  socket.on('host:oo-edit', handler(async (edit) => hostGame().editGroups(edit)));
   socket.on('host:start', handler(async () => hostGame().start()));
   socket.on('host:next', handler(async () => hostGame().next()));
   socket.on('host:lock', handler(async ({ locked }) => hostGame().setLocked(locked)));
@@ -271,6 +275,11 @@ io.on('connection', (socket) => {
     })
   );
 
+  // Only One: add / remove one of your answers, or say you're done.
+  socket.on('player:oo-add', handler(async ({ text }) => playerGame().addListAnswer(socket.data.playerId, text)));
+  socket.on('player:oo-remove', handler(async ({ id }) => playerGame().removeListAnswer(socket.data.playerId, id)));
+  socket.on('player:oo-done', handler(async ({ done }) => playerGame().setListDone(socket.data.playerId, done !== false)));
+
   socket.on(
     'player:wager',
     handler(async ({ amount }) => {
@@ -311,10 +320,13 @@ server.listen(config.PORT, config.HOST, () => {
   console.log(`  Host screen:  http://localhost:${config.PORT}/host`);
   if (lan) console.log(`  On your LAN:  http://${lan}:${config.PORT}/host`);
   if (config.PUBLIC_URL) console.log(`  Public URL:   ${config.PUBLIC_URL}/host`);
-  const info = gameInfo();
-  console.log(`  ${info.name}: ${info.online.categories.length} from ${info.online.name} + ${info.packs.length} from files`);
-  for (const e of info.errors) console.warn(`  ! Skipped ${e}`);
+  for (const g of listGames()) {
+    const parts = [g.online && `${g.online.categories.length} from ${g.online.name}`, `${g.packs.length} from files`];
+    console.log(`  ${(g.name + ':').padEnd(14)}${parts.filter(Boolean).join(' + ')}`);
+    for (const e of g.errors) console.warn(`  ! Skipped ${e}`);
+  }
   sources.warmUp(); // load the saved question bank and top it up in the background
+  matcher.loadModel(); // Only One's answer-matching model, so the first round doesn't wait for it
   const bank = sources.bankStatus();
   console.log(`  Question bank: ${bank.ready} questions ready${bank.filling ? ', filling up in the background' : ''}`);
   console.log('');

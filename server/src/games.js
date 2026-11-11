@@ -1,10 +1,16 @@
-// The games a host can pick (just Wager Wars for now): trivia with bets. Before each question everyone sees its category
-// and bets some of their points; a right answer wins the bet, a wrong one loses it (see game.js).
+// The games a host can pick. The host screen builds its picker and setup page from this list.
 //
-// Question sources:
-//   online — live categories from Open Trivia DB (see sources.js)
-//   packs  — .json files in server/trivia/ (see the README there), plus an optional upload
+//   Wager Wars ('wager')  — trivia with bets. Before each question everyone sees its category and bets
+//                            some of their points; a right answer wins the bet, a wrong one loses it.
+//                            Questions: live Open Trivia DB categories (sources.js), .json files in
+//                            server/trivia/, or an uploaded file.
+//   Only One ('onlyone')  — each round shows a category; tables type as many answers as they can, and
+//                            only answers no other table wrote score. Prompts: .json packs in
+//                            server/onlyone/, or prompts the host types in.
+// The engine for both is game.js; Only One's answer matching is matcher.js.
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const config = require('./config');
 const { loadSets, validateSet } = require('./trivia');
 const sources = require('./sources');
@@ -12,14 +18,16 @@ const sources = require('./sources');
 const DEFAULT_ONLINE_COUNT = 20; // when a host picks "All" with online categories
 const MAX_ROUND = 50;
 
-const GAME = {
+const WAGER = {
   id: 'wager',
+  kind: 'wager',
+  unit: 'question', // what one step of the game is called on screen
   name: 'Wager Wars',
   tagline: 'See the category, bet your points, then answer.',
   description:
     'Everyone starts with 1,000 points. Before each question you see its category and bet some or all ' +
     'of your points. A right answer wins the bet; a wrong one loses it.',
-  defaultPacks: sources.listOnline().categories.map((c) => c.id), // every category ticked to start
+  defaultPacks: () => sources.listOnline().categories.map((c) => c.id), // every category ticked to start
   settings: [
     {
       id: 'count',
@@ -63,32 +71,121 @@ const GAME = {
   ],
 };
 
+const ONLY_ONE = {
+  id: 'onlyone',
+  kind: 'onlyone',
+  unit: 'round',
+  name: 'Only One',
+  tagline: 'Name things nobody else thinks of.',
+  description:
+    'Each round shows a category, like "Things in a dorm room". Every table types as many answers as it can. ' +
+    'Any answer another table also wrote scores nothing; answers only you thought of score 100 each.',
+  defaultPacks: () => [...loadPromptPacks().packs.keys()], // every pack ticked to start
+  settings: [
+    {
+      id: 'count',
+      label: 'Rounds',
+      options: [3, 5, 8, 10].map((v) => ({ value: v, label: String(v) })),
+      default: 5,
+    },
+    {
+      id: 'time',
+      label: 'Time to answer',
+      options: [45, 60, 90, 120].map((s) => ({ value: s, label: `${s}s` })),
+      default: 60,
+    },
+  ],
+};
+
+const GAMES = [WAGER, ONLY_ONE];
+const byId = new Map(GAMES.map((g) => [g.id, g]));
+
+const MAX_PROMPT = 100;
+const cleanPrompt = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_PROMPT);
+
+/** Only One packs: every .json file in server/onlyone/ (see the README there). Bad files are skipped. */
+function loadPromptPacks() {
+  const packs = new Map();
+  const errors = [];
+  let files = [];
+  try {
+    files = fs.readdirSync(config.ONLYONE_DIR).filter((f) => f.toLowerCase().endsWith('.json')).sort();
+  } catch (err) {
+    errors.push(`Cannot read folder ${config.ONLYONE_DIR}: ${err.message}`);
+  }
+  for (const file of files) {
+    const id = path.basename(file, path.extname(file));
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(config.ONLYONE_DIR, file), 'utf8'));
+      if (!raw || !Array.isArray(raw.prompts) || !raw.prompts.length) throw new Error('"prompts" must be a non-empty array.');
+      const prompts = raw.prompts
+        .map((p) => (typeof p === 'object' && p ? { prompt: cleanPrompt(p.prompt), time: Number(p.time) || 0 } : { prompt: cleanPrompt(p), time: 0 }))
+        .filter((p) => p.prompt);
+      if (!prompts.length) throw new Error('no usable prompts.');
+      packs.set(id, {
+        id,
+        title: cleanPrompt(raw.title) || id,
+        icon: typeof raw.icon === 'string' ? raw.icon.slice(0, 8) : '',
+        description: String(raw.description || '').slice(0, 200),
+        prompts,
+      });
+    } catch (err) {
+      errors.push(`${file}: ${err.message}`);
+    }
+  }
+  return { packs, errors };
+}
+
 const loadPacks = () => loadSets(config.TRIVIA_DIR);
 
 /** Questions from a pack, labelled with the pack's title as their category (shown before betting). */
 const withCategory = (questions, title) => questions.map((q) => ({ ...q, category: q.category || title }));
 
-/** Everything the host setup screen needs: the game, its categories and settings. */
-function gameInfo() {
-  const { sets, errors } = loadPacks();
-  return {
-    id: GAME.id,
-    name: GAME.name,
-    tagline: GAME.tagline,
-    description: GAME.description,
-    allowUpload: config.ALLOW_UPLOADS,
-    defaultPacks: GAME.defaultPacks,
-    settings: GAME.settings.map(({ id, label, hint, options, default: def }) => ({ id, label, hint, options, default: def })),
-    online: sources.listOnline(), // Open Trivia DB categories
-    packs: [...sets.values()].map((s) => ({ id: s.id, title: s.title, description: s.description, count: s.questions.length })),
-    errors,
-  };
+const publicSettings = (game) => game.settings.map(({ id, label, hint, options, default: def }) => ({ id, label, hint, options, default: def }));
+
+/** Everything the host setup screen needs: the games, their categories and settings. */
+function listGames() {
+  const trivia = loadPacks();
+  const prompts = loadPromptPacks();
+  return [
+    {
+      id: WAGER.id,
+      kind: WAGER.kind,
+      unit: WAGER.unit,
+      name: WAGER.name,
+      tagline: WAGER.tagline,
+      description: WAGER.description,
+      allowUpload: config.ALLOW_UPLOADS,
+      packNoun: 'questions',
+      defaultPacks: WAGER.defaultPacks(),
+      settings: publicSettings(WAGER),
+      online: sources.listOnline(), // Open Trivia DB categories
+      packs: [...trivia.sets.values()].map((s) => ({ id: s.id, title: s.title, description: s.description, count: s.questions.length })),
+      errors: trivia.errors,
+    },
+    {
+      id: ONLY_ONE.id,
+      kind: ONLY_ONE.kind,
+      unit: ONLY_ONE.unit,
+      name: ONLY_ONE.name,
+      tagline: ONLY_ONE.tagline,
+      description: ONLY_ONE.description,
+      allowUpload: false,
+      customPrompts: true, // the host can type their own prompts
+      packNoun: 'categories',
+      defaultPacks: [...prompts.packs.keys()],
+      settings: publicSettings(ONLY_ONE),
+      online: null,
+      packs: [...prompts.packs.values()].map((p) => ({ id: p.id, title: p.title, icon: p.icon, description: p.description, count: p.prompts.length })),
+      errors: prompts.errors,
+    },
+  ];
 }
 
 /** Keeps only setting values the game offers; anything else falls back to the default. */
-function parseSettings(raw = {}) {
+function parseSettings(game, raw = {}) {
   const out = {};
-  for (const s of GAME.settings) {
+  for (const s of game.settings) {
     const match = s.options.find((o) => o.value === raw[s.id]);
     out[s.id] = match ? match.value : s.default;
   }
@@ -108,8 +205,11 @@ function shuffle(list) {
  * server and/or an uploaded file — shuffled / trimmed / re-timed per the settings.
  * Returns the game, the settings and the round. Async because online questions are fetched live.
  */
-async function buildRound({ packs = [], customSet, settings: rawSettings }) {
-  const settings = parseSettings(rawSettings || {});
+async function buildRound({ game: gameId, packs = [], customSet, customPrompts, settings: rawSettings }) {
+  const game = byId.get(String(gameId || 'wager'));
+  if (!game) throw new Error('That game no longer exists. Refresh the page.');
+  const settings = parseSettings(game, rawSettings || {});
+  if (game.kind === 'onlyone') return buildPromptRound(game, packs, customPrompts, settings);
   const { sets } = loadPacks();
 
   const chosen = [...new Set((Array.isArray(packs) ? packs : []).map(String))];
@@ -189,7 +289,42 @@ async function buildRound({ packs = [], customSet, settings: rawSettings }) {
 
   const unique = [...new Set(titles)];
   const title = unique.length <= 2 ? unique.join(' & ') : `${unique.length} categories`;
-  return { game: GAME, settings, round: { title, questions } };
+  return { game, settings, round: { title, questions } };
 }
 
-module.exports = { gameInfo, buildRound, GAME };
+/** Only One: `settings.count` prompts drawn from the chosen packs and/or the host's own prompts. */
+function buildPromptRound(game, packIds, customPrompts, settings) {
+  const { packs } = loadPromptPacks();
+  const pool = [];
+  const titles = [];
+  for (const id of [...new Set((Array.isArray(packIds) ? packIds : []).map(String))]) {
+    const pack = packs.get(id);
+    if (!pack) throw new Error('One of those categories no longer exists. Refresh the page.');
+    pool.push(...pack.prompts.map((p) => ({ ...p, category: pack.title })));
+    titles.push(pack.title);
+  }
+  const own = (Array.isArray(customPrompts) ? customPrompts : []).map(cleanPrompt).filter(Boolean).slice(0, 50);
+  if (own.length) {
+    titles.push('Your own');
+    // The host's own prompts go first, in the order typed; packs fill the remaining rounds.
+    shuffle(pool);
+    pool.unshift(...own.map((prompt) => ({ prompt, time: 0, category: 'Your own' })));
+  } else {
+    shuffle(pool);
+  }
+  if (!pool.length) throw new Error('Pick at least one category, or type your own.');
+  const seen = new Set();
+  const questions = [];
+  for (const p of pool) {
+    const key = p.prompt.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    questions.push({ question: p.prompt, category: p.category, time: p.time || settings.time, points: 'standard', answers: [], correct: [] });
+    if (questions.length >= settings.count) break;
+  }
+  const unique = [...new Set(titles)];
+  const title = unique.length <= 2 ? unique.join(' & ') : `${unique.length} packs`;
+  return { game, settings, round: { title, questions } };
+}
+
+module.exports = { listGames, buildRound, loadPromptPacks, GAMES };

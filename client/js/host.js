@@ -8,11 +8,11 @@
   const socket = io();
   watchConnection(socket);
 
-  const PREFS_KEY = 'rt_host_setup_v2'; // last categories/settings, so hosts don't redo them (v2: new defaults)
+  const PREFS_KEY = 'rt_host_setup_v3'; // last categories/settings per game, so hosts don't redo them
   let current = null; // last state received from the server
   let stopTimer = null;
   let catalog = []; // games offered by the server (/api/games)
-  let choice = null; // { game, packs: Set<id>, upload: { data, title, count } | null, settings: {} }
+  let choice = null; // { game, packs: Set<id>, upload: { data, title, count } | null, custom: '', settings: {} }
 
   /** True while the table is in the lobby waiting for the host to pick the next game. */
   const picking = () => current?.phase === 'lobby' && current.choosing;
@@ -50,17 +50,18 @@
   function renderGames() {
     $('#game-list').replaceChildren(
       ...catalog.map((g) => {
-        const n = g.packs.length + (g.online?.categories.length || 0);
+        const n = g.kind === 'onlyone' ? g.packs.reduce((sum, p) => sum + p.count, 0) : g.packs.length + (g.online?.categories.length || 0);
+        const noun = g.kind === 'onlyone' ? `categor${n === 1 ? 'y' : 'ies'} to play` : `categor${n === 1 ? 'y' : 'ies'}`;
         return el(
           'button',
           { type: 'button', className: `game-card game-${g.id}`, onclick: () => openGame(g) },
-          gameArt(),
+          gameArt(g),
           el(
             'div',
             { className: 'game-text' },
             el('strong', {}, g.name),
             el('span', { className: 'desc' }, g.tagline),
-            el('span', { className: 'count' }, `${n} categor${n === 1 ? 'y' : 'ies'}`)
+            el('span', { className: 'count' }, `${n} ${noun}`)
           ),
           el('span', { className: 'go', 'aria-hidden': 'true' }, '→')
         );
@@ -68,17 +69,21 @@
     );
   }
 
-  /** The game card's picture: a stack of betting chips. */
-  function gameArt() {
-    const art = el('div', { className: 'game-art', 'aria-hidden': 'true' });
-    ['red', 'teal', 'yellow'].forEach((c) => art.append(el('span', { className: `chip-art s-${c}` })));
+  /** The game card's picture: a stack of betting chips (Wager Wars), or a lone "1" among crossed-out answers (Only One). */
+  function gameArt(g) {
+    const art = el('div', { className: `game-art art-${g.kind}`, 'aria-hidden': 'true' });
+    if (g.kind === 'onlyone') {
+      art.append(el('span', { className: 'oo-art-x' }), el('span', { className: 'oo-art-x' }), el('span', { className: 'oo-art-one' }, '1'));
+    } else {
+      ['red', 'teal', 'yellow'].forEach((c) => art.append(el('span', { className: `chip-art s-${c}` })));
+    }
     return art;
   }
 
   // ------------------------------------------------------------- setup: 2. categories & settings
 
   function openGame(game) {
-    const saved = storage.get(localStorage, PREFS_KEY) || {};
+    const saved = (storage.get(localStorage, PREFS_KEY) || {})[game.id] || {};
     const known = new Set([...game.packs.map((p) => p.id), ...(game.online?.categories || []).map((c) => c.id)]);
     let packs = new Set((saved.packs || []).filter((p) => known.has(p)));
     if (!packs.size) packs = new Set(game.defaultPacks.filter((p) => known.has(p)));
@@ -88,9 +93,9 @@
       const v = saved.settings?.[s.id];
       settings[s.id] = s.options.some((o) => o.value === v) ? v : s.default;
     }
-    choice = { game, packs, upload: null, settings };
+    choice = { game, packs, upload: null, custom: saved.custom || '', settings };
 
-    $('#settings-art').replaceWith(Object.assign(gameArt(), { id: 'settings-art' }));
+    $('#settings-art').replaceWith(Object.assign(gameArt(game), { id: 'settings-art' }));
     $('#settings-title').textContent = game.name;
     $('#settings-desc').textContent = game.description;
     $('#settings-error').textContent = '';
@@ -158,7 +163,7 @@
 
     // Question files on this server, and an upload of your own
     const files = game.packs.map((p, i) =>
-      categoryCard({ id: p.id, icon: '📄', title: p.title, desc: p.description, meta: `${p.count} questions` }, i)
+      categoryCard({ id: p.id, icon: p.icon || '📄', title: p.title, desc: p.description, meta: `${p.count} ${game.packNoun}` }, i)
     );
     const uploadRow = game.allowUpload
       ? el(
@@ -201,6 +206,29 @@
         )
       );
     }
+    if (game.customPrompts) {
+      // Only One: the host's own prompts, one per line. They're played first, in order.
+      const box = el('textarea', {
+        className: 'input custom-prompts',
+        rows: 3,
+        maxLength: 3000,
+        placeholder: 'Things in our group chat\nReasons Sam is late\nThings in this room',
+        value: choice.custom,
+        oninput: (e) => {
+          choice.custom = e.target.value;
+          updateSummary();
+        },
+      });
+      blocks.push(
+        el(
+          'div',
+          { className: 'source' },
+          el('h3', { className: 'source-head' }, 'Write your own'),
+          el('p', { className: 'credit-line' }, 'One per line. Your own categories are played first.'),
+          box
+        )
+      );
+    }
     $('#set-list').replaceChildren(...blocks);
   }
 
@@ -238,12 +266,19 @@
 
   const onlineChosen = () => [...choice.packs].filter((id) => id.includes(':'));
 
+  /** The host's own Only One prompts, one per line. */
+  const customList = () => (choice.custom || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 50);
+
   function updateSummary() {
     const { game, packs, upload, settings } = choice;
     const online = onlineChosen().length;
-    const available = game.packs.filter((p) => packs.has(p.id)).reduce((n, p) => n + p.count, 0) + (upload?.count || 0);
+    const available =
+      game.packs.filter((p) => packs.has(p.id)).reduce((n, p) => n + p.count, 0) + (upload?.count || 0) + (game.customPrompts ? customList().length : 0);
     let text;
-    if (online) {
+    if (game.kind === 'onlyone') {
+      const playing = Math.min(settings.count, available);
+      text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s each` : 'Pick a category, or write your own';
+    } else if (online) {
       const n = settings.count || 20;
       text = `${n} questions · from ${choice.packs.size + (choice.upload ? 1 : 0)} categor${choice.packs.size + (choice.upload ? 1 : 0) === 1 ? 'y' : 'ies'}`;
     } else if (available) {
@@ -282,13 +317,17 @@
     btn.disabled = true;
     btn.textContent = 'Opening…';
     $('#settings-error').textContent = '';
-    storage.set(localStorage, PREFS_KEY, { packs: [...choice.packs], settings: choice.settings });
+    const prefs = storage.get(localStorage, PREFS_KEY) || {};
+    prefs[choice.game.id] = { packs: [...choice.packs], settings: choice.settings, custom: choice.custom };
+    storage.set(localStorage, PREFS_KEY, prefs);
     const next = picking(); // the same table's next game, or a new table
     const res = await request(
       socket,
       next ? 'host:setup' : 'host:create',
       {
+        game: choice.game.id,
         packs: [...choice.packs],
+        customPrompts: choice.game.customPrompts ? customList() : undefined,
         customSet: choice.upload?.data,
         settings: choice.settings,
         password: $('#host-password').value,
@@ -327,12 +366,16 @@
       renderGuests(players, tableSize);
     }
   });
-  socket.on('host:answers', ({ phase, answered, playerCount, seats, tableSize }) => {
+  socket.on('host:answers', ({ phase, answered, answerCount, playerCount, seats, tableSize }) => {
     if (!current || current.phase !== phase) return;
     Object.assign(current, { seats, tableSize });
     if (phase === 'wager') {
       $('#w-label').textContent = `${answered} of ${playerCount} bets in`;
       renderAnswerSeats($('#w-seats'), seats, tableSize);
+    } else if (phase === 'question' && current.kind === 'onlyone') {
+      Object.assign(current, { answered, answerCount });
+      ooLabel(current);
+      renderListSeats($('#oo-seats'), seats, tableSize);
     } else if (phase === 'question') {
       $('#q-answered-label').textContent = `${answered} of ${playerCount} in`;
       renderAnswerSeats($('#q-seats'), seats, tableSize);
@@ -381,7 +424,11 @@
       case 'intro':
         return renderIntro(state);
       case 'question':
-        return renderQuestion(state, false);
+        return state.kind === 'onlyone' ? renderListRound(state) : renderQuestion(state, false);
+      case 'grouping':
+        return renderListRound(state);
+      case 'review':
+        return renderReview(state);
       case 'reveal':
         return renderQuestion(state, true);
       case 'scoreboard':
@@ -449,7 +496,7 @@
   // ---- Bets: the category is up, bets are coming in
 
   function renderWager(s) {
-    $('#w-progress').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
+    $('#w-progress').textContent = `${s.gameName} · ${s.unit} ${s.index + 1} of ${s.total}`;
     $('#w-category').textContent = s.category || 'Mystery category';
     const tags = [];
     if (s.difficulty) tags.push(el('span', { className: 'chip' }, s.difficulty[0].toUpperCase() + s.difficulty.slice(1)));
@@ -471,7 +518,7 @@
   // ---- Intro
 
   function renderIntro(s) {
-    $('#intro-counter').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
+    $('#intro-counter').textContent = `${s.gameName} · ${s.unit} ${s.index + 1} of ${s.total}`;
     $('#intro-question').textContent = s.question;
     $('#intro-double').hidden = s.points !== 'double';
     showScreen('screen-intro');
@@ -484,7 +531,7 @@
     const stage = $('#q-stage');
     stage.classList.toggle('revealed', reveal);
     $('#q-progress').textContent =
-      `${s.gameName} · Question ${s.index + 1} of ${s.total}` + (s.points === 'double' ? ' · double winnings' : '');
+      `${s.gameName} · ${s.unit} ${s.index + 1} of ${s.total}` + (s.points === 'double' ? ' · double winnings' : '');
     $('#q-text').textContent = s.question;
     // Online questions are credited to their database, as their licenses require.
     $('#q-credit').textContent = s.credit ? `Question: ${s.credit}` : '';
@@ -553,6 +600,15 @@
       .join('  ·  ');
   }
 
+  /** Only One: every table is seated; faded while typing, a ✓ once they're done. */
+  function renderListSeats(container, seats, tableSize) {
+    renderSeats(
+      container,
+      seats.map((p) => ({ id: p.id, seat: p.seat, cls: `taken s-${seatColor(p.seat)} ${p.answered ? 'in' : 'typing'}`, name: p.name, label: p.answered ? '✓' : p.seat })),
+      tableSize
+    );
+  }
+
   function renderAnswerSeats(container, seats, tableSize) {
     renderSeats(
       container,
@@ -561,10 +617,129 @@
     );
   }
 
+  // ---- Only One: tables type answers; then the host checks the groups
+
+  function ooLabel(s) {
+    const n = s.answerCount || 0;
+    $('#oo-label').textContent =
+      s.phase === 'grouping' ? 'Comparing answers…' : `${n} answer${n === 1 ? '' : 's'} · ${s.answered} of ${s.playerCount} done`;
+  }
+
+  function renderListRound(s) {
+    $('#oo-progress').textContent = `${s.gameName} · Round ${s.index + 1} of ${s.total}`;
+    $('#oo-category').textContent = s.category || '';
+    $('#oo-prompt').textContent = s.question;
+    const table = $('#oo-table');
+    table.classList.remove('low');
+    showScreen('screen-oo');
+    ooLabel(s);
+    if (s.phase === 'grouping') {
+      $('#oo-timer').textContent = '…';
+      $('#oo-ring').style.transition = 'none';
+      $('#oo-ring').style.strokeDashoffset = '100';
+      $('#oo-next').hidden = true;
+      return;
+    }
+    $('#oo-next').hidden = false;
+    drainRing($('#oo-ring'), s.timeLeft, s.time * 1000);
+    stopTimer = countdown(s.timeLeft, s.time * 1000, (sec) => {
+      $('#oo-timer').textContent = sec;
+      table.classList.toggle('low', sec <= 10 && sec > 0);
+    });
+    renderListSeats($('#oo-seats'), s.seats, s.tableSize);
+  }
+
+  let mergeFrom = null; // review: the group picked to merge into another
+
+  /** The groups, shared ones first. Tap a group then another to merge them; tap an answer to pull it
+   *  out of its group; ✕ rejects an answer that doesn't fit the category. */
+  function renderReview(s) {
+    $('#rv-progress').textContent = `${s.gameName} · Round ${s.index + 1} of ${s.total}`;
+    $('#rv-prompt').textContent = s.question;
+    if (!s.groups.some((g) => g.id === mergeFrom)) mergeFrom = null;
+    const order = { shared: 0, unique: 1, rejected: 2 };
+    const groups = [...s.groups].sort(
+      (a, b) => order[a.status] - order[b.status] || b.entries.length - a.entries.length || a.entries[0].text.localeCompare(b.entries[0].text)
+    );
+    const edit = async (change) => {
+      const res = await request(socket, 'host:oo-edit', change);
+      if (!res.ok) toast(res.error);
+    };
+    const cards = groups.map((g) =>
+      el(
+        'div',
+        {
+          className: `rv-group ${g.status}${mergeFrom === g.id ? ' picked' : ''}`,
+          role: 'button',
+          tabIndex: 0,
+          title: mergeFrom && mergeFrom !== g.id ? 'Merge into this group' : 'Pick this group to merge it with another',
+          onclick: () => {
+            if (!mergeFrom) mergeFrom = g.id;
+            else if (mergeFrom === g.id) mergeFrom = null;
+            else {
+              const from = mergeFrom;
+              mergeFrom = null;
+              edit({ action: 'merge', group: from, into: g.id });
+              return;
+            }
+            renderReview(current);
+          },
+        },
+        el('span', { className: 'rv-badge' }, g.status === 'unique' ? `+${g.points}` : g.status === 'shared' ? 'Shared' : 'Rejected'),
+        el(
+          'div',
+          { className: 'rv-entries' },
+          ...g.entries.map((e) =>
+            el(
+              'span',
+              { className: 'rv-entry' + (e.rejected ? ' rejected' : '') },
+              el('span', { className: `seat-no s-${seatColor(e.seat)}`, title: e.name }, e.seat || '?'),
+              el(
+                'button',
+                {
+                  type: 'button',
+                  className: 'rv-text',
+                  title: g.entries.length > 1 ? 'Not the same: pull this answer out' : e.name,
+                  onclick: (ev) => {
+                    ev.stopPropagation();
+                    if (g.entries.length > 1) edit({ action: 'split', entry: e.id });
+                  },
+                },
+                e.text
+              ),
+              el(
+                'button',
+                {
+                  type: 'button',
+                  className: 'rv-x',
+                  title: e.rejected ? 'Allow this answer again' : "Doesn't fit the category: reject it",
+                  'aria-label': e.rejected ? `Allow ${e.text}` : `Reject ${e.text}`,
+                  onclick: (ev) => {
+                    ev.stopPropagation();
+                    edit({ action: 'reject', entry: e.id });
+                  },
+                },
+                e.rejected ? '↺' : '✕'
+              )
+            )
+          )
+        )
+      )
+    );
+    $('#rv-groups').replaceChildren(...(cards.length ? cards : [el('p', { className: 'muted rv-empty' }, 'Nobody wrote anything this round.')]));
+    const count = (st) => s.groups.filter((g) => g.status === st).length;
+    $('#rv-summary').textContent = `${count('unique')} unique · ${count('shared')} shared` + (count('rejected') ? ` · ${count('rejected')} rejected` : '');
+    $('#rv-hint').textContent = mergeFrom
+      ? 'Now tap the group it matches to merge them (or tap it again to cancel).'
+      : 'Tap an answer to pull it out of a group. Tap a group, then another, to merge them. ✕ rejects an answer.';
+    $('#rv-next').textContent = s.isLast ? 'Score it · final results' : 'Score it';
+    showScreen('screen-review');
+  }
+
   // ---- Standings: each player's bar races from their old score to their new one
 
   function renderStandings(s) {
-    $('#score-progress').textContent = `after question ${s.index + 1} of ${s.total}`;
+    $('#score-progress').textContent = `after ${s.unit.toLowerCase()} ${s.index + 1} of ${s.total}`;
     const max = Math.max(1, s.maxScore);
     const rows = s.top.map((p, i) => {
       const moved = s.index > 0 ? p.prevRank - p.rank : 0;
@@ -597,7 +772,7 @@
       );
     });
     $('#score-list').replaceChildren(...rows);
-    $('#score-next').textContent = `Next question (${s.index + 2}/${s.total})`;
+    $('#score-next').textContent = `Next ${s.unit.toLowerCase()} (${s.index + 2}/${s.total})`;
     showScreen('screen-scoreboard');
   }
 
@@ -617,7 +792,7 @@
             { className: 'block' },
             el('span', { className: 'medal' }, medals[i]),
             el('span', { className: 'pscore' }, p.score.toLocaleString()),
-            el('small', {}, `${p.correct}/${s.total} correct`)
+            el('small', {}, p.stat)
           )
         )
       )
@@ -641,6 +816,8 @@
   $('#q-next').addEventListener('click', () => send('host:next'));
   $('#w-next').addEventListener('click', () => send('host:next'));
   $('#score-next').addEventListener('click', () => send('host:next'));
+  $('#oo-next').addEventListener('click', () => send('host:next'));
+  $('#rv-next').addEventListener('click', () => send('host:next'));
   $('#lock-btn').addEventListener('click', () => send('host:lock', { locked: !current?.locked }));
   // Play again / change game: the table goes back to the lobby while the host picks the next game.
   $('#change-game-btn').addEventListener('click', () => send('host:reopen'));
@@ -665,7 +842,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.target.closest('input, textarea, button')) return;
     if (e.key !== ' ' && e.key !== 'ArrowRight' && e.key !== 'PageDown') return;
-    const btn = ['#start-btn', '#w-next', '#q-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
+    const btn = ['#start-btn', '#w-next', '#q-next', '#oo-next', '#rv-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
     if (btn) {
       e.preventDefault();
       btn.click();
