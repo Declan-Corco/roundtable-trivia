@@ -89,38 +89,77 @@
     showScreen('screen-settings');
   }
 
+  /** One category to tick: an icon, its name and a line about it. */
+  function categoryCard({ id, icon, title, desc, meta }, i) {
+    const on = choice.packs.has(id);
+    return el(
+      'button',
+      {
+        type: 'button',
+        className: 'cat-card' + (on ? ' selected' : ''),
+        'aria-pressed': String(on),
+        onclick: () => {
+          if (on) choice.packs.delete(id);
+          else choice.packs.add(id);
+          renderPacks();
+          updateSummary();
+        },
+      },
+      el('span', { className: 'cat-icon', dataset: { i: i % 4 }, 'aria-hidden': 'true' }, icon),
+      el('span', { className: 'tick', 'aria-hidden': 'true' }, '✓'),
+      el('span', { className: 'cat-title' }, title),
+      desc ? el('span', { className: 'cat-desc' }, desc) : null,
+      meta ? el('span', { className: 'cat-meta' }, meta) : null
+    );
+  }
+
   function renderPacks() {
     const { game, packs, upload } = choice;
-    const toggle = (id) => {
-      if (packs.has(id)) packs.delete(id);
-      else packs.add(id);
-      renderPacks();
-      updateSummary();
-    };
-    const cards = game.packs.map((p) =>
-      el(
-        'button',
-        {
-          type: 'button',
-          className: 'set-card' + (packs.has(p.id) ? ' selected' : ''),
-          'aria-pressed': String(packs.has(p.id)),
-          onclick: () => toggle(p.id),
-        },
-        el('span', { className: 'tick' }, '✓'),
-        el('strong', {}, p.title),
-        p.description ? el('span', { className: 'desc' }, p.description) : null,
-        el('span', { className: 'count' }, `${p.count} questions`)
-      )
-    );
-    if (game.allowUpload) {
-      cards.push(
+    const picked = packs.size + (upload ? 1 : 0);
+    $('#pack-hint').textContent = picked ? `${picked} picked · mix as many as you like` : 'Pick one or more to mix them';
+
+    const blocks = [];
+    const online = game.online;
+    if (online) {
+      // Popular Open Trivia DB categories, fetched live; credited as its license requires.
+      blocks.push(
         el(
+          'div',
+          { className: 'source' },
+          el(
+            'div',
+            { className: 'cat-grid' },
+            ...online.categories.map((c, i) => categoryCard({ id: c.id, icon: c.icon || '❓', title: c.title, desc: c.description }, i))
+          ),
+          el(
+            'p',
+            { className: 'credit-line' },
+            'Questions from ',
+            el('a', { href: online.url, target: '_blank', rel: 'noopener' }, online.name),
+            ', licensed ',
+            el('a', { href: online.licenseUrl, target: '_blank', rel: 'noopener' }, online.license),
+            '.'
+          )
+        )
+      );
+    }
+
+    // Question files on this server, and an upload of your own
+    const files = game.packs.map((p, i) =>
+      categoryCard({ id: p.id, icon: '📄', title: p.title, desc: p.description, meta: `${p.count} questions` }, i)
+    );
+    const uploadRow = game.allowUpload
+      ? el(
           'label',
-          { className: 'set-card upload' + (upload ? ' selected' : '') },
+          { className: 'upload-row' + (upload ? ' selected' : '') },
           el('input', { type: 'file', accept: '.json,application/json', onchange: onUpload }),
-          el('span', { className: 'tick' }, '✓'),
-          el('strong', {}, upload ? upload.title : '⬆ Upload your own'),
-          el('span', { className: 'desc' }, upload ? `${upload.count} questions · click to change` : 'A .json file (see the README)'),
+          el('span', { className: 'upload-icon', 'aria-hidden': 'true' }, upload ? '✓' : '⬆'),
+          el(
+            'span',
+            { className: 'upload-text' },
+            el('span', { className: 'cat-title' }, upload ? upload.title : 'Upload a question file'),
+            el('span', { className: 'cat-desc' }, upload ? `${upload.count} questions · click to change` : 'A .json file. The README shows the format.')
+          ),
           upload
             ? el(
                 'button',
@@ -138,53 +177,15 @@
               )
             : null
         )
-      );
-    }
-    const blocks = [];
-    const online = game.online;
-    if (online) {
-      // Popular Open Trivia DB categories, fetched live; credited as its license requires.
+      : null;
+    if (files.length || uploadRow) {
       blocks.push(
         el(
           'div',
           { className: 'source' },
-          el(
-            'div',
-            { className: 'set-grid' },
-            ...online.categories.map((c) =>
-              el(
-                'button',
-                {
-                  type: 'button',
-                  className: 'set-card' + (packs.has(c.id) ? ' selected' : ''),
-                  'aria-pressed': String(packs.has(c.id)),
-                  onclick: () => toggle(c.id),
-                },
-                el('span', { className: 'tick' }, '✓'),
-                el('strong', {}, c.title),
-                el('span', { className: 'desc' }, c.description)
-              )
-            )
-          ),
-          el(
-            'p',
-            { className: 'credit-line' },
-            'Questions from ',
-            el('a', { href: online.url, target: '_blank', rel: 'noopener' }, online.name),
-            ', licensed ',
-            el('a', { href: online.licenseUrl, target: '_blank', rel: 'noopener' }, online.license),
-            '.'
-          )
-        )
-      );
-    }
-    if (cards.length) {
-      blocks.push(
-        el(
-          'div',
-          { className: 'source' },
-          online ? el('div', { className: 'source-head' }, el('strong', {}, 'Your own questions'), el('span', { className: 'muted' }, 'Files on this server, or upload one.')) : null,
-          el('div', { className: 'set-grid' }, ...cards)
+          online ? el('h3', { className: 'source-head' }, 'Your own questions') : null,
+          files.length ? el('div', { className: 'cat-grid' }, ...files) : null,
+          uploadRow
         )
       );
     }

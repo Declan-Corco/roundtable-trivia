@@ -23,14 +23,14 @@ const SOURCE = {
  * from https://opentdb.com/api_category.php
  */
 const CATEGORIES = [
-  { id: 9, title: 'General Knowledge', description: 'A bit of everything.' },
-  { id: 17, title: 'Science & Nature', description: 'Biology, chemistry, physics and the natural world.' },
-  { id: 22, title: 'Geography', description: 'Countries, capitals and landmarks.' },
-  { id: 23, title: 'History', description: 'Empires, wars and famous firsts.' },
-  { id: 11, title: 'Film', description: 'Movies, actors and directors.' },
-  { id: 12, title: 'Music', description: 'Artists, albums and hits.' },
-  { id: 21, title: 'Sports', description: 'Teams, players and records.' },
-  { id: 27, title: 'Animals', description: 'Creatures great and small.' },
+  { id: 9, icon: '🧠', title: 'General Knowledge', description: 'A bit of everything.' },
+  { id: 17, icon: '🔬', title: 'Science & Nature', description: 'Biology, chemistry, physics and the natural world.' },
+  { id: 22, icon: '🌍', title: 'Geography', description: 'Countries, capitals and landmarks.' },
+  { id: 23, icon: '🏛️', title: 'History', description: 'Empires, wars and famous firsts.' },
+  { id: 11, icon: '🎬', title: 'Film', description: 'Movies, actors and directors.' },
+  { id: 12, icon: '🎵', title: 'Music', description: 'Artists, albums and hits.' },
+  { id: 21, icon: '⚽', title: 'Sports', description: 'Teams, players and records.' },
+  { id: 27, icon: '🐾', title: 'Animals', description: 'Creatures great and small.' },
 ];
 const PREFIX = 'otdb:'; // category ids as the host screen sees them, e.g. "otdb:9"
 
@@ -139,7 +139,7 @@ function normalise(r, categoryTitle) {
 function listOnline() {
   return {
     ...SOURCE,
-    categories: CATEGORIES.map((c) => ({ id: PREFIX + c.id, title: c.title, description: c.description })),
+    categories: CATEGORIES.map((c) => ({ id: PREFIX + c.id, icon: c.icon, title: c.title, description: c.description })),
   };
 }
 
