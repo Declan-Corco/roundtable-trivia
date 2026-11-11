@@ -27,7 +27,8 @@ Each round, the big screen shows a category, like "Things in a dorm room". Every
 
 With an Anthropic API key, Claude double-checks every round. When time is up, the TV shows a grading screen with the roundtable logo spinning while the server matches answers and Claude checks them (usually about 4 seconds). Claude rejects answers that don't fit the category ("banana" for "Things a superhero needs"), merges answers the local model missed ("Doritos" = "chips"), and splits ones it grouped wrongly. The results then appear with Claude's changes tagged "Claude", and the host can still undo any of them before scoring. If Claude doesn't answer within 15 seconds (`AI_CHECK_WAIT_MS`) or fails, the results appear without its check.
 
-- **Cost:** about $0.0003 per round with Claude Haiku 5.5, so roughly 3,000 rounds per dollar for a 12-table room. The server log prints the tokens and cost of every check.
+- **Cost:** about $0.0005–0.001 per round with Claude Haiku 5.5 (it gives a verdict on every answer), so roughly 1,000–2,000 rounds per dollar. The server log prints the answers judged, tokens, cost and time of every check.
+- **Check it:** `cd /opt/roundtable/server && sudo node scripts/try-claude-check.js` sends Claude three tricky rounds (including "Things you shouldn't say on a first date") and shows what it rejected and merged, and what it got wrong.
 - **Turn it on:** get a key at https://console.anthropic.com, then run `sudo bash server/setup.sh --anthropic-key sk-ant-...`, or add `ANTHROPIC_API_KEY=sk-ant-...` to `/etc/roundtable.env` and run `sudo systemctl restart roundtable`. It's then always on for Only One; remove the key to turn it off.
 - **Privacy:** each round's category and answers are sent to Anthropic. Leave the key unset to keep everything on your server.
 - `AI_CHECK_MODEL` changes the model (default `claude-haiku-5-5`).

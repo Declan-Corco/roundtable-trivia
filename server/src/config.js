@@ -35,7 +35,7 @@ module.exports = {
     .map((s) => s.trim())
     .filter(Boolean),
   // Only One: Claude double-checks each round's answers when this key is set (optional).
-  // Get one at https://console.anthropic.com. Answers are sent to Anthropic; ~$0.0003 per round.
+  // Get one at https://console.anthropic.com. Answers are sent to Anthropic; ~$0.0005-0.001 per round.
   ANTHROPIC_API_KEY: (process.env.ANTHROPIC_API_KEY || '').trim(),
   AI_CHECK_MODEL: process.env.AI_CHECK_MODEL || 'claude-haiku-5-5',
   // The grading screen waits this long for Claude, then shows the results without its check.

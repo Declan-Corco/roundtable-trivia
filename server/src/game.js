@@ -655,8 +655,8 @@ class Game {
     }
     const u = result.usage || {};
     console.log(
-      `[game ${this.pin}] Claude check: ${u.input_tokens ?? '?'} in / ${u.output_tokens ?? '?'} out tokens, ` +
-        `~$${aicheck.costOf(u).toFixed(5)}, ${(result.ms / 1000).toFixed(1)} s`
+      `[game ${this.pin}] Claude check: judged ${result.judged}/${result.total} answers, rejected ${result.misfits.length}; ` +
+        `${u.input_tokens ?? '?'} in / ${u.output_tokens ?? '?'} out tokens, ~$${aicheck.costOf(u).toFixed(5)}, ${(result.ms / 1000).toFixed(1)} s`
     );
     let split = 0;
     for (const id of result.split) {
@@ -677,11 +677,12 @@ class Game {
       merged++;
     }
     let rejected = 0;
-    for (const id of result.misfits) {
+    for (const { id, why } of result.misfits) {
       const e = this.entries.get(id);
       if (!e || e.rejected) continue;
       e.rejected = true;
       e.ai = true;
+      e.aiWhy = why; // shown to the host, e.g. "a compliment - fine to say"
       rejected++;
     }
     this.ai = { status: 'done', rejected, merged, split };
@@ -718,6 +719,7 @@ class Game {
       if (!e) throw new Error('That answer is gone.');
       e.rejected = !e.rejected;
       e.ai = false; // the host's call now
+      e.aiWhy = '';
     } else {
       throw new Error('Unknown change.');
     }
@@ -968,7 +970,7 @@ class Game {
             entries: g.ids.map((id) => {
               const e = this.entries.get(id);
               const p = this.players.get(e.playerId);
-              return { id, text: e.text, rejected: e.rejected, ai: !!e.ai, seat: p?.seat ?? 0, name: p?.name ?? 'Left the game' };
+              return { id, text: e.text, rejected: e.rejected, ai: !!e.ai, why: e.aiWhy || '', seat: p?.seat ?? 0, name: p?.name ?? 'Left the game' };
             }),
           };
         });

@@ -166,9 +166,10 @@ PACK_DIRS=(trivia onlyone) # question and category packs (see the README in each
 for d in "${PACK_DIRS[@]}"; do mkdir -p "$INSTALL_DIR/server/$d"; done
 
 if [[ "$(realpath "$SRC_ROOT")" != "$(realpath "$INSTALL_DIR")" ]]; then
-  rm -rf "$INSTALL_DIR/client" "$INSTALL_DIR/server/src"
+  rm -rf "$INSTALL_DIR/client" "$INSTALL_DIR/server/src" "$INSTALL_DIR/server/scripts"
   cp -r "$SRC_ROOT/client" "$INSTALL_DIR/client"
   cp -r "$SRC_ROOT/server/src" "$INSTALL_DIR/server/src"
+  [[ -d "$SRC_ROOT/server/scripts" ]] && cp -r "$SRC_ROOT/server/scripts" "$INSTALL_DIR/server/scripts"
   cp "$SRC_ROOT/server/package.json" "$INSTALL_DIR/server/"
   [[ -f "$SRC_ROOT/server/package-lock.json" ]] && cp "$SRC_ROOT/server/package-lock.json" "$INSTALL_DIR/server/"
   cp "$SRC_ROOT/server/setup.sh" "$INSTALL_DIR/server/"
@@ -221,7 +222,7 @@ MAX_PLAYERS=200
 # Set to YOURTEAMID.site.round-table.app once the app is signed with a paid Apple Developer account.
 APPLE_APP_ID=
 # Only One (optional): Claude double-checks each round's answers when this is set.
-# Get a key at https://console.anthropic.com. About $0.0003 per round; answers are sent to Anthropic.
+# Get a key at https://console.anthropic.com. About $0.001 per round; answers are sent to Anthropic.
 ANTHROPIC_API_KEY=
 EOF
   chmod 640 "$ENV_FILE"

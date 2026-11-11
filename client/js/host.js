@@ -767,7 +767,7 @@
               'span',
               { className: 'rv-entry' + (e.rejected ? ' rejected' : '') },
               el('span', { className: `seat-no s-${seatColor(e.seat)}`, title: e.name }, e.seat || '?'),
-              e.ai && e.rejected ? el('span', { className: 'ai-tag', title: "Claude: doesn't fit the category" }, 'Claude') : null,
+              e.ai && e.rejected ? el('span', { className: 'ai-tag', title: e.why ? `Claude: ${e.why}` : "Claude: doesn't fit the category" }, 'Claude') : null,
               el(
                 'button',
                 {
@@ -797,7 +797,9 @@
               )
             )
           )
-        )
+        ),
+        // Why Claude rejected an answer, on its own line under the group.
+        ...g.entries.filter((e) => e.ai && e.rejected && e.why).map((e) => el('p', { className: 'rv-why' }, `Claude: ${e.why}`))
       )
     );
     $('#rv-groups').replaceChildren(...(cards.length ? cards : [el('p', { className: 'muted rv-empty' }, 'Nobody wrote anything this round.')]));
