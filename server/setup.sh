@@ -27,7 +27,7 @@ INSTALL_DIR="/opt/roundtable"
 ENV_FILE="/etc/roundtable.env"
 SERVICE_FILE="/etc/systemd/system/roundtable.service"
 NODE_MAJOR=22
-MIN_NODE=18
+MIN_NODE=22 # older Node is end-of-life, and sharp (used by the Only One matching model) needs 20.9+
 
 DOMAIN=""
 EMAIL=""

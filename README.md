@@ -57,7 +57,7 @@ Roundtable/
 
 ## 1. Try it on your own computer (2 minutes)
 
-Install [Node.js](https://nodejs.org) (version 18 or newer), then:
+Install [Node.js](https://nodejs.org) (version 22 or newer), then:
 
 ```bash
 cd server
