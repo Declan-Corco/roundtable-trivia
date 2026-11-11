@@ -43,7 +43,7 @@
     <button class="btn btn-small" id="leave-btn" type="button">Leave game</button>
   </section>
 
-  <!-- Wager Wars: bet on the next category -->
+  <!-- Bet on the next category -->
   <section class="screen input-screen" id="screen-wager" hidden>
     <div class="p-qhead">
       <span id="w-counter"></span>
@@ -66,7 +66,7 @@
   <section class="screen" id="screen-intro" hidden>
     <p class="muted" id="intro-counter"></p>
     <p class="big-title">Get ready!</p>
-    <span class="badge-double" id="intro-double" hidden>Double points!</span>
+    <span class="badge-double" id="intro-double" hidden>Double winnings!</span>
     <span class="chip-line" id="intro-wager" hidden></span>
     <div class="progress"><div id="intro-progress"></div></div>
   </section>
@@ -80,42 +80,6 @@
     <div class="progress p-timebar"><div id="p-timebar"></div></div>
     <p class="p-qtext" id="p-qtext"></p>
     <div class="p-answers" id="p-answers"></div>
-  </section>
-
-  <!-- Split Decision, step 2: guess the room's split -->
-  <section class="screen input-screen" id="screen-guess" hidden>
-    <div class="p-qhead">
-      <span id="g-counter"></span>
-      <span class="p-timer" id="g-timer"></span>
-    </div>
-    <div class="progress p-timebar"><div id="g-timebar"></div></div>
-    <div class="input-body">
-      <p class="p-qtext">You picked <strong id="g-pick"></strong>. Now guess the room.</p>
-      <p class="big-title guess-title" id="g-title"></p>
-      <div class="split-preview" aria-hidden="true">
-        <div class="sp-side" data-i="0" id="g-a"></div>
-        <div class="sp-side" data-i="1" id="g-b"></div>
-      </div>
-      <input class="range" type="range" id="g-range" min="0" max="100" step="1" value="50" aria-label="Percentage who picked A">
-      <button class="btn btn-primary btn-big btn-block" id="g-lock" type="button">Lock in</button>
-      <button class="link-btn" id="g-back" type="button">Change my pick</button>
-    </div>
-  </section>
-
-  <!-- Sticker Shock: type a number -->
-  <section class="screen input-screen" id="screen-number" hidden>
-    <div class="p-qhead">
-      <span id="n-counter"></span>
-      <span class="p-timer" id="n-timer"></span>
-    </div>
-    <div class="progress p-timebar"><div id="n-timebar"></div></div>
-    <div class="input-body">
-      <p class="p-qtext" id="n-qtext"></p>
-      <div class="num-display" id="n-display"></div>
-      <p class="hint">Closest without going over wins.</p>
-      <div class="keypad" id="n-keypad"></div>
-      <button class="btn btn-primary btn-big btn-block" id="n-lock" type="button" disabled>Lock in</button>
-    </div>
   </section>
 
   <!-- Waiting after answering -->

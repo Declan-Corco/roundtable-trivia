@@ -40,11 +40,13 @@ Hosts can also upload a `.json` file straight from their own computer on the hos
 | `questions[].answers` | **yes** | 2 to 4 answers. Use `["True", "False"]` for true/false. |
 | `questions[].correct` | **yes** | Index of the right answer, **counting from 0** (first answer = 0). Use an array like `[0, 2]` when several answers are right. |
 | `questions[].time` | no | Seconds for this question. |
-| `questions[].points` | no | `"standard"` (default), `"double"`, or `"none"` (practice question). |
+| `questions[].points` | no | `"standard"` (default), `"double"` (a right answer wins twice the bet), or `"none"` (practice question: nothing is won or lost). |
+| `questions[].category` | no | The category players see before they bet. Defaults to the set's `title`. |
 | `questions[].image` | no | An `https://` image URL, or `/media/<file>` for an image placed in `trivia/media/`. |
 
 ## Scoring
 
-A correct answer earns 500–1000 points depending on speed (instant = 1000, at the buzzer = 500),
-doubled for `"double"` questions, plus an answer-streak bonus of +100 per consecutive correct
-answer (max +500).
+Everyone starts with 1,000 points. Before each question, players see its category and bet some or
+all of their points (they can always bet up to 500, even with fewer points). A right answer wins
+the bet, doubled for `"double"` questions. A wrong answer, or no answer, loses it. Scores never go
+below 0.

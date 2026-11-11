@@ -1,8 +1,7 @@
-// Player screen: join with a PIN + nickname, then use the phone as an answer controller.
-// Depending on the game, the phone shows A-D buttons (Trivia, Majority Rules, Wager Wars), a bet
-// slider (Wager Wars), A/B then a % slider (Split Decision), or a number keypad (Sticker Shock).
+// Player screen: join with a PIN + nickname, then use the phone as a controller:
+// a bet slider before each question, then A-D answer buttons.
 (() => {
-  const { $, el, showScreen, request, countdown, toast, watchConnection, storage, ordinal, formatValue, signed } = window.RT;
+  const { $, el, showScreen, request, countdown, toast, watchConnection, storage, ordinal, signed } = window.RT;
   const SESSION_KEY = 'rt_player_session';
   const socket = io();
   watchConnection(socket);
@@ -145,7 +144,7 @@
       }
 
       case 'question':
-        return s.input === 'number' ? renderNumber(s) : renderQuestion(s);
+        return renderQuestion(s);
 
       case 'answered':
         return renderAnswered(s);
@@ -160,7 +159,7 @@
         $('#final-rank').textContent = ordinal(s.rank);
         $('#final-detail').textContent =
           `out of ${s.playerCount} player${s.playerCount === 1 ? '' : 's'} · ${s.score.toLocaleString()} points · ` +
-          `${s.correctCount}/${s.total} ${s.stat}` +
+          `${s.correctCount}/${s.total} correct` +
           (s.rank === 1 ? ' 🏆' : s.rank <= 3 ? ' 🎉' : '');
         clearSession();
         inGame = true; // keep showing this screen until they choose to leave
@@ -200,7 +199,7 @@
     }
   }
 
-  // ---- Wager Wars: bet on the category before the question is shown
+  // ---- Bet on the category before the question is shown
 
   let wagerMax = 0;
   const QUICK = [
@@ -257,13 +256,10 @@
     }
   });
 
-  // ---- A-D answers (and Split Decision's first step: pick a side)
-
-  let splitPick = null; // { i, text } while choosing a side in Split Decision
+  // ---- A-D answers
 
   function renderQuestion(s) {
     startPhase(s);
-    splitPick = null;
     $('#p-qcounter').textContent = counter(s);
     $('#p-qtext').textContent = s.question;
     const list = $('#p-answers');
@@ -273,7 +269,7 @@
         RT.answerCard(i, text, 'button', {
           type: 'button',
           'aria-label': `${RT.LETTERS[i]}: ${text}`,
-          onclick: () => (s.input === 'split' ? pickSide(i, text) : answer(i)),
+          onclick: () => answer(i),
         })
       )
     );
@@ -292,113 +288,6 @@
     });
   }
 
-  // ---- Split Decision, step 2: what % of the room picked A?
-
-  function pickSide(i, text) {
-    navigator.vibrate?.(20);
-    splitPick = { i, text };
-    const a = current.answers[0];
-    $('#g-counter').textContent = counter(current);
-    $('#g-pick').textContent = text;
-    $('#g-title').textContent = `What % of the room picked “${a}”?`;
-    $('#g-lock').disabled = false;
-    setGuess($('#g-range').value);
-    showScreen('screen-guess');
-    runTimer('g');
-  }
-
-  function setGuess(v) {
-    const n = Math.max(0, Math.min(100, Math.round(Number(v))));
-    $('#g-range').value = String(n);
-    const [a, b] = current?.answers || ['A', 'B'];
-    const sa = $('#g-a');
-    const sb = $('#g-b');
-    sa.style.flexGrow = String(Math.max(n, 0.001));
-    sb.style.flexGrow = String(Math.max(100 - n, 0.001));
-    sa.replaceChildren(el('strong', {}, `${n}%`), el('span', {}, a));
-    sb.replaceChildren(el('strong', {}, `${100 - n}%`), el('span', {}, b));
-  }
-  $('#g-range').addEventListener('input', (e) => setGuess(e.target.value));
-
-  $('#g-back').addEventListener('click', () => {
-    splitPick = null;
-    showScreen('screen-question');
-    runTimer('p');
-  });
-
-  $('#g-lock').addEventListener('click', () => {
-    if (!splitPick) return;
-    const btn = $('#g-lock');
-    btn.disabled = true;
-    sendAnswer({ index: splitPick.i, guess: Number($('#g-range').value) }, () => (btn.disabled = false));
-  });
-
-  // ---- Sticker Shock: a number keypad
-
-  let typed = '';
-  const MAX_DIGITS = 10;
-  const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'];
-  $('#n-keypad').replaceChildren(
-    ...KEYS.map((k) =>
-      el('button', { type: 'button', className: 'key' + (k === '⌫' ? ' back' : ''), 'aria-label': k === '⌫' ? 'Delete' : k, onclick: () => press(k) }, k)
-    )
-  );
-
-  function renderNumber(s) {
-    startPhase(s);
-    typed = '';
-    $('#n-counter').textContent = counter(s);
-    $('#n-qtext').textContent = s.question;
-    showNumber();
-    showScreen('screen-number');
-    runTimer('n');
-  }
-
-  function press(k) {
-    if (k === '⌫') typed = typed.slice(0, -1);
-    else if (k === '.') {
-      if (!typed.includes('.')) typed = (typed || '0') + '.';
-    } else {
-      const [whole, dec] = typed.split('.');
-      if (dec != null && dec.length >= 2) return; // cents at most
-      if (typed.replace('.', '').length >= MAX_DIGITS) return;
-      typed = whole === '0' && dec == null ? k : typed + k; // no leading zeros
-    }
-    navigator.vibrate?.(8);
-    showNumber();
-  }
-
-  function showNumber() {
-    const s = current || {};
-    const unit = s.suffix ? (/^[a-z]/i.test(s.suffix) ? ' ' : '') + s.suffix : '';
-    // Show what's typed with thousands separators, keeping a trailing "." while typing decimals.
-    const [whole, dec] = typed.split('.');
-    const shown = typed ? Number(whole || 0).toLocaleString() + (dec != null ? '.' + dec : '') : '0';
-    $('#n-display').replaceChildren(
-      s.prefix ? el('span', { className: 'unit' }, s.prefix) : '',
-      el('span', { className: typed ? '' : 'placeholder' }, shown),
-      unit ? el('span', { className: 'unit' }, unit) : ''
-    );
-    $('#n-lock').disabled = !typed || !Number.isFinite(Number(typed));
-  }
-
-  $('#n-lock').addEventListener('click', () => {
-    const btn = $('#n-lock');
-    if (btn.disabled) return;
-    btn.disabled = true;
-    sendAnswer({ value: Number(typed) }, () => (btn.disabled = false));
-  });
-
-  // A keyboard works too (handy on a laptop).
-  document.addEventListener('keydown', (e) => {
-    if ($('#screen-number').hidden || e.target.closest('input')) return;
-    if (/^[0-9.]$/.test(e.key)) press(e.key);
-    else if (e.key === 'Backspace') press('⌫');
-    else if (e.key === 'Enter') $('#n-lock').click();
-    else return;
-    e.preventDefault();
-  });
-
   // ---- Locked in: show what was sent
 
   function renderAnswered(s) {
@@ -407,11 +296,9 @@
     let shape = [];
     if (m.kind === 'wager') {
       shape = [el('div', { className: 'num-display' }, (m.wager || 0).toLocaleString()), el('p', { className: 'muted' }, 'points on the line')];
-    } else if (m.kind === 'number') {
-      shape = [el('div', { className: 'num-display' }, formatValue(m.value, m.prefix, m.suffix))];
     } else if (m.index != null) {
       shape = [RT.answerCard(m.index, m.text)];
-      if (m.kind === 'split') shape.push(el('p', { className: 'muted' }, `You guessed ${m.guess}% picked “${m.splitA}”`));
+      if (m.wager) shape.push(el('p', { className: 'muted' }, `${m.wager.toLocaleString()} points on the line`));
     }
     $('#answered-shape').replaceChildren(...shape);
     showScreen('screen-answered');
@@ -422,45 +309,21 @@
   function renderResult(s) {
     let icon;
     let title;
-    let detail = '';
-    let theme = s.correct ? 'good' : 'bad';
-
+    let detail;
     if (!s.answered) {
       icon = '⏱';
       title = "Time's up!";
-      if (s.mode === 'wager' && s.points < 0) detail = `You lost your bet of ${(-s.points).toLocaleString()}.`;
-    } else if (s.input === 'split') {
-      icon = s.correct ? '🎯' : '%';
-      title = s.error < 0.5 ? 'Spot on!' : s.correct ? 'Closest guess!' : `Off by ${s.error}%`;
-      theme = s.correct || s.error <= 10 ? 'good' : 'bad';
-      detail = `${s.pct}% picked “${s.splitA}”. You guessed ${s.guess}%.`;
-    } else if (s.input === 'number') {
-      const actual = formatValue(s.actual, s.prefix, s.suffix);
-      const mine = formatValue(s.value, s.prefix, s.suffix);
-      if (s.winner) {
-        icon = s.exact ? '🎯' : '✓';
-        title = s.exact ? 'Perfect bid!' : 'Winning bid!';
-      } else if (s.over) {
-        icon = '✗';
-        title = 'Over!';
-      } else {
-        icon = '↓';
-        title = 'Under, but not closest';
-        theme = null;
-      }
-      detail = `Actual: ${actual} · You said: ${mine}`;
+      detail = s.points < 0 ? `You lost your bet of ${(-s.points).toLocaleString()}.` : '';
     } else {
       icon = s.correct ? '✓' : '✗';
-      if (s.mode === 'majority') title = s.correct ? 'With the table!' : 'Against the table';
-      else title = s.correct ? 'Correct!' : 'Incorrect';
-      if (s.mode === 'wager') {
-        detail = !s.wager
-          ? 'You bet nothing on this one.'
-          : s.correct
-            ? `You bet ${s.wager.toLocaleString()} and won.`
-            : `You bet ${s.wager.toLocaleString()} and lost it.`;
-      }
+      title = s.correct ? 'Correct!' : 'Incorrect';
+      detail = !s.wager
+        ? 'You bet nothing on this one.'
+        : s.correct
+          ? `You bet ${s.wager.toLocaleString()} and won.`
+          : `You bet ${s.wager.toLocaleString()} and lost it.`;
     }
+    const theme = s.correct ? 'good' : 'bad';
 
     setResultTheme(theme);
     $('#result-icon').textContent = icon;

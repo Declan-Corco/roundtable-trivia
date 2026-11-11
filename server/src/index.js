@@ -9,7 +9,7 @@ const { Server } = require('socket.io');
 const QRCode = require('qrcode');
 
 const config = require('./config');
-const { listGames, buildRound } = require('./games');
+const { gameInfo, buildRound } = require('./games');
 const sources = require('./sources');
 const { Game } = require('./game');
 
@@ -72,10 +72,10 @@ app.get('/api/config', (_req, res) => {
   res.json({ needsPassword: !!config.HOST_PASSWORD, allowUploads: config.ALLOW_UPLOADS });
 });
 
-// The games a host can pick, with their categories and settings (packs are re-read every time,
+// The categories and settings for the host setup screen (packs are re-read every time,
 // so new .json files show up without a restart).
-app.get('/api/games', (_req, res) => {
-  res.json({ games: listGames() });
+app.get('/api/game', (_req, res) => {
+  res.json(gameInfo());
 });
 
 // Apple universal links: lets the iOS app open /join links (e.g. from the QR code) directly.
@@ -169,15 +169,15 @@ io.on('connection', (socket) => {
 
   socket.on(
     'host:create',
-    handler(async ({ game: gameId, packs, customSet, settings, password }) => {
+    handler(async ({ packs, customSet, settings, password }) => {
       if (config.HOST_PASSWORD && !safeEqual(password || '', config.HOST_PASSWORD)) {
         throw new Error('Wrong host password.');
       }
       if (games.size >= config.MAX_GAMES) throw new Error('The server is busy. Try again later.');
 
-      // The chosen game + categories + settings → the questions for this round (see games.js).
+      // The chosen categories + settings → the questions for this round (see games.js).
       // Online categories are fetched live here, which can take a few seconds.
-      const { game: def, round: set, settings: chosen } = await buildRound({ game: gameId, packs, customSet, settings });
+      const { game: def, round: set, settings: chosen } = await buildRound({ packs, customSet, settings });
 
       const pin = newPin();
       const joinUrl = `${baseUrlFor(socket)}/join?pin=${pin}`;
@@ -186,10 +186,7 @@ io.on('connection', (socket) => {
         io,
         pin,
         set,
-        gameId: def.id,
         gameName: def.name,
-        mode: def.mode,
-        stat: def.stat,
         wagerTime: chosen.wagerTime,
         joinUrl,
         qr,
@@ -255,10 +252,9 @@ io.on('connection', (socket) => {
 
   socket.on(
     'player:answer',
-    handler(async ({ index, guess, value }) => {
+    handler(async ({ index }) => {
       const game = playerGame();
-      // index: A-D choice · guess: Split Decision's % · value: Sticker Shock's number
-      game.submitAnswer(socket.data.playerId, { index, guess, value });
+      game.submitAnswer(socket.data.playerId, index);
     })
   );
 
@@ -302,12 +298,9 @@ server.listen(config.PORT, config.HOST, () => {
   console.log(`  Host screen:  http://localhost:${config.PORT}/host`);
   if (lan) console.log(`  On your LAN:  http://${lan}:${config.PORT}/host`);
   if (config.PUBLIC_URL) console.log(`  Public URL:   ${config.PUBLIC_URL}/host`);
-  for (const g of listGames()) {
-    const online = g.online ? g.online.categories.length : 0;
-    const parts = [online && `${online} from ${g.online.name}`, (g.packs.length || !online) && `${g.packs.length} from files`];
-    console.log(`  ${(g.name + ':').padEnd(17)}categories: ${parts.filter(Boolean).join(' + ')}`);
-    for (const e of g.errors) console.warn(`  ! Skipped ${e}`);
-  }
+  const info = gameInfo();
+  console.log(`  Categories:   ${info.online.categories.length} from ${info.online.name} + ${info.packs.length} from files`);
+  for (const e of info.errors) console.warn(`  ! Skipped ${e}`);
   console.log('');
   sources.warmUp(); // fetch an Open Trivia DB session token in the background
 });

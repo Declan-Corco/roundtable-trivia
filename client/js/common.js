@@ -222,19 +222,11 @@
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   };
 
-  /** A number with its unit, e.g. formatValue(1.65, '$', 'billion') -> "$1.65 billion". */
-  function formatValue(value, prefix = '', suffix = '') {
-    const n = Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
-    // Word units get a space ("1.65 billion"); symbols don't ("50%").
-    const unit = suffix ? (/^[a-z]/i.test(suffix) ? ' ' : '') + suffix : '';
-    return `${prefix || ''}${n}${unit}`;
-  }
-
   /** Points with a sign: +500, −300 (a real minus sign), +0. */
   const signed = (n) => (n < 0 ? `−${Math.abs(n).toLocaleString()}` : `+${n.toLocaleString()}`);
 
   window.RT = {
-    $, el, letter, showScreen, request, countdown, toast, watchConnection, storage, ordinal, formatValue, signed,
+    $, el, letter, showScreen, request, countdown, toast, watchConnection, storage, ordinal, signed,
     LETTERS, MARK_SVG, drainBar, drainRing, seatColor, renderSeats, answerCard,
   };
 })();

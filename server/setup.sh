@@ -159,7 +159,7 @@ NODE_BIN="$(command -v node)"
 # ----------------------------------------------------------------------------- app files
 step "Installing the app to ${INSTALL_DIR}"
 id -u "$APP" &>/dev/null || useradd --system --user-group --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin "$APP"
-PACK_DIRS=(trivia majority split prices) # question packs for each game (see server/src/games.js)
+PACK_DIRS=(trivia) # question packs (see server/trivia/README.md)
 for d in "${PACK_DIRS[@]}"; do mkdir -p "$INSTALL_DIR/server/$d"; done
 
 if [[ "$(realpath "$SRC_ROOT")" != "$(realpath "$INSTALL_DIR")" ]]; then
@@ -335,9 +335,6 @@ echo "${c_green}${c_bold}=====================================================${
 [[ -n "$FINAL_URL" ]] && echo "  Public address:   ${c_bold}${FINAL_URL}/host${c_off}"
 echo
 echo "  Trivia sets:   ${INSTALL_DIR}/server/trivia/    (drop .json files here)"
-echo "  Majority Rules packs: ${INSTALL_DIR}/server/majority/"
-echo "  Split Decision packs: ${INSTALL_DIR}/server/split/"
-echo "  Sticker Shock packs:  ${INSTALL_DIR}/server/prices/"
 echo "  Settings:      ${ENV_FILE}"
 echo "  View logs:     sudo journalctl -u ${APP} -f"
 echo "  Restart:       sudo systemctl restart ${APP}"

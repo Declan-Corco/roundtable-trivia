@@ -8,83 +8,33 @@
   const socket = io();
   watchConnection(socket);
 
-  const PREFS_KEY = 'rt_host_prefs'; // last categories/settings per game, so hosts don't redo them
+  const PREFS_KEY = 'rt_host_setup'; // last categories/settings, so hosts don't redo them
   let current = null; // last state received from the server
   let stopTimer = null;
-  let catalog = []; // games offered by the server (/api/games)
   let choice = null; // { game, packs: Set<id>, upload: { data, title, count } | null, settings: {} }
 
-  // ------------------------------------------------------------- setup: 1. pick a game
+  // ------------------------------------------------------------- setup: categories & settings
 
   async function showSetup() {
     current = null;
     stopTimer?.();
     $('#end-btn').hidden = true;
-    showScreen('screen-setup');
-    $('#setup-error').textContent = '';
+    showScreen('screen-settings');
+    $('#settings-error').textContent = '';
     try {
-      const [cfg, data] = await Promise.all([
+      const [cfg, game] = await Promise.all([
         fetch('/api/config').then((r) => r.json()),
-        fetch('/api/games').then((r) => r.json()),
+        fetch('/api/game').then((r) => r.json()),
       ]);
       $('#host-password').hidden = !cfg.needsPassword;
-      catalog = data.games;
-      renderGames();
+      openGame(game);
     } catch {
-      $('#setup-error').textContent = 'Could not load the games from the server.';
+      $('#settings-error').textContent = 'Could not load the categories from the server.';
     }
   }
 
-  function renderGames() {
-    $('#game-list').replaceChildren(
-      ...catalog.map((g) =>
-        el(
-          'button',
-          { type: 'button', className: `game-card game-${g.id}`, onclick: () => openGame(g.id) },
-          gameArt(g),
-          el(
-            'div',
-            { className: 'game-text' },
-            el('strong', {}, g.name),
-            el('span', { className: 'desc' }, g.tagline),
-            (() => {
-              const n = g.packs.length + (g.online?.categories.length || 0);
-              return el('span', { className: 'count' }, `${n} categor${n === 1 ? 'y' : 'ies'}`);
-            })()
-          ),
-          el('span', { className: 'go', 'aria-hidden': 'true' }, '→')
-        )
-      )
-    );
-  }
-
-  /** A little picture for each game card. */
-  function gameArt(g) {
-    const art = el('div', { className: 'game-art', 'aria-hidden': 'true' });
-    if (g.mode === 'majority') {
-      // Most of the table on one colour
-      ['teal', 'teal', 'red', 'teal', 'yellow', 'teal'].forEach((c) => art.append(el('span', { className: `dot s-${c}` })));
-    } else if (g.mode === 'wager') {
-      // A stack of betting chips
-      ['red', 'teal', 'yellow'].forEach((c) => art.append(el('span', { className: `chip-art s-${c}` })));
-    } else if (g.mode === 'split') {
-      // A bar split between A and B
-      art.append(el('span', { className: 'split-art' }, el('span', { dataset: { i: 0 } }, 'A'), el('span', { dataset: { i: 1 } }, 'B')));
-    } else if (g.mode === 'closest') {
-      // A price tag
-      art.append(el('span', { className: 'tag-art' }, '$'));
-    } else {
-      RT.LETTERS.forEach((L, i) => art.append(el('span', { className: 'mini-tile', dataset: { i } }, L)));
-    }
-    return art;
-  }
-
-  // ------------------------------------------------------------- setup: 2. categories & settings
-
-  function openGame(id) {
-    const game = catalog.find((g) => g.id === id);
-    if (!game) return;
-    const saved = (storage.get(localStorage, PREFS_KEY) || {})[id] || {};
+  function openGame(game) {
+    const saved = storage.get(localStorage, PREFS_KEY) || {};
     const known = new Set([...game.packs.map((p) => p.id), ...(game.online?.categories || []).map((c) => c.id)]);
     let packs = new Set((saved.packs || []).filter((p) => known.has(p)));
     if (!packs.size) packs = new Set(game.defaultPacks.filter((p) => known.has(p)));
@@ -103,7 +53,6 @@
     renderPacks();
     renderSettings();
     updateSummary();
-    showScreen('screen-settings');
   }
 
   function renderPacks() {
@@ -277,8 +226,6 @@
     }
   }
 
-  $('#back-to-games').addEventListener('click', () => showScreen('screen-setup'));
-
   $('#create-btn').addEventListener('click', async () => {
     if (!choice) return;
     const btn = $('#create-btn');
@@ -287,14 +234,11 @@
     // Open Trivia DB allows one request every 5 seconds, so mixing its categories takes a moment.
     btn.textContent = onlineChosen().length ? 'Fetching questions…' : 'Opening…';
     $('#settings-error').textContent = '';
-    const prefs = storage.get(localStorage, PREFS_KEY) || {};
-    prefs[choice.game.id] = { packs: [...choice.packs], settings: choice.settings };
-    storage.set(localStorage, PREFS_KEY, prefs);
+    storage.set(localStorage, PREFS_KEY, { packs: [...choice.packs], settings: choice.settings });
     const res = await request(
       socket,
       'host:create',
       {
-        game: choice.game.id,
         packs: [...choice.packs],
         customSet: choice.upload?.data,
         settings: choice.settings,
@@ -373,8 +317,6 @@
       case 'question':
         return renderQuestion(state, false);
       case 'reveal':
-        if (state.input === 'split') return renderSplitReveal(state);
-        if (state.input === 'number') return renderClosestReveal(state);
         return renderQuestion(state, true);
       case 'scoreboard':
         return renderStandings(state);
@@ -438,7 +380,7 @@
     );
   }
 
-  // ---- Wager Wars: the category is up, bets are coming in
+  // ---- Bets: the category is up, bets are coming in
 
   function renderWager(s) {
     $('#w-progress').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
@@ -477,7 +419,7 @@
     const stage = $('#q-stage');
     stage.classList.toggle('revealed', reveal);
     $('#q-progress').textContent =
-      `${s.gameName} · Question ${s.index + 1} of ${s.total}` + (s.points === 'double' ? ' · double points' : '');
+      `${s.gameName} · Question ${s.index + 1} of ${s.total}` + (s.points === 'double' ? ' · double winnings' : '');
     $('#q-text').textContent = s.question;
     $('#q-pin').textContent = `Join with PIN ${s.pin}`;
     // Online questions are credited to their database, as their licenses require.
@@ -517,12 +459,7 @@
       ring.style.transition = 'none';
       ring.style.strokeDashoffset = '0';
       timer.textContent = '✓';
-      $('#q-answered-label').textContent =
-        s.mode === 'majority'
-          ? s.correct.length
-            ? `${s.correctCount} of ${s.playerCount} went with the table`
-            : 'Nobody voted'
-          : `${s.correctCount} of ${s.playerCount} got it`;
+      $('#q-answered-label').textContent = `${s.correctCount} of ${s.playerCount} got it`;
       renderSeats(
         $('#q-seats'),
         s.seats.map((p) => ({ id: p.id, seat: p.seat, cls: p.choice == null ? 'none' : `c${p.choice}`, name: p.name, label: p.seat })),
@@ -543,18 +480,13 @@
     next.classList.toggle('btn-primary', reveal);
   }
 
-  /** The line under the question: how to answer this game, or (Wager Wars) the biggest swings. */
+  /** The line under the question: after the reveal, the biggest swings each way. */
   function questionHint(s, reveal) {
-    if (reveal && s.mode === 'wager' && s.bets) {
-      const { biggestWin: w, biggestLoss: l } = s.bets;
-      return [w && `Biggest win: ${w.name} ${RT.signed(w.points)}`, l && `Biggest loss: ${l.name} ${RT.signed(l.points)}`]
-        .filter(Boolean)
-        .join('  ·  ');
-    }
-    if (reveal) return '';
-    if (s.input === 'split') return `Pick a side, then guess what % of the room picks “${s.answers[0]}”`;
-    if (s.input === 'number') return 'Type your guess on your phone. Closest without going over wins.';
-    return '';
+    if (!reveal || !s.bets) return '';
+    const { biggestWin: w, biggestLoss: l } = s.bets;
+    return [w && `Biggest win: ${w.name} ${RT.signed(w.points)}`, l && `Biggest loss: ${l.name} ${RT.signed(l.points)}`]
+      .filter(Boolean)
+      .join('  ·  ');
   }
 
   function renderAnswerSeats(container, seats, tableSize) {
@@ -562,119 +494,6 @@
       container,
       seats.map((p) => ({ id: p.id, seat: p.seat, cls: p.answered ? `taken s-${seatColor(p.seat)} in` : 'waiting', name: p.name, label: p.seat })),
       tableSize
-    );
-  }
-
-  // ---- Reveals for Split Decision and Sticker Shock
-
-  function showNumberReveal(s, body, summary) {
-    $('#nr-progress').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
-    $('#nr-question').textContent = s.question;
-    $('#nr-body').replaceChildren(...body);
-    $('#nr-summary').textContent = summary;
-    $('#nr-note').textContent = s.note || '';
-    $('#nr-next').textContent = s.isLast ? 'Final results' : 'Standings';
-    showScreen('screen-nreveal');
-  }
-
-  /** Split Decision: how the room actually split, and where everyone's guess landed. */
-  function renderSplitReveal(s) {
-    if (s.pct == null) return showNumberReveal(s, [el('p', { className: 'big-title' }, 'Nobody voted')], '');
-    const pctA = Math.round(s.pct);
-    const sides = s.answers.map((text, i) => {
-      const pct = i === 0 ? pctA : 100 - pctA;
-      const side = el(
-        'div',
-        { className: 'split-side', dataset: { i } },
-        el('span', { className: 'split-pct' }, `${pct}%`),
-        el('span', { className: 'split-label' }, `${RT.LETTERS[i]} · ${text} (${s.counts[i]})`)
-      );
-      side.style.flexGrow = '50'; // starts even, then slides to the real split
-      requestAnimationFrame(() => requestAnimationFrame(() => (side.style.flexGrow = String(Math.max(pct, 0.001)))));
-      return side;
-    });
-    const bar = el('div', { className: 'split-bar' }, ...sides);
-
-    // Everyone's guess on a 0-100% line. Guesses within 3 points of each other stack up.
-    const stacks = new Map();
-    const dots = s.guesses.map((g) => {
-      const bucket = Math.round(g.guess / 3);
-      const level = stacks.get(bucket) || 0;
-      stacks.set(bucket, level + 1);
-      return el(
-        'span',
-        {
-          className: `gt-dot s-${seatColor(g.seat)}${g.closest ? ' closest' : ''}`,
-          title: `${g.name}: ${g.guess}%`,
-          style: `left:${g.guess}%; --level:${Math.min(level, 4)}`,
-        },
-        g.seat
-      );
-    });
-    const track = el(
-      'div',
-      { className: 'guess-track' },
-      el('span', { className: 'gt-title' }, `Guesses: what % picked “${s.answers[0]}”`),
-      el('div', { className: 'gt-line' }, ...[0, 25, 50, 75, 100].map((t) => el('span', { className: 'gt-tick', style: `left:${t}%` }, `${t}%`))),
-      el('span', { className: 'gt-actual', style: `left:${s.pct}%` }, el('span', {}, `${pctA}%`)),
-      ...dots
-    );
-
-    const best = s.guesses.slice(0, 5).map((g, i) =>
-      el(
-        'li',
-        { className: g.closest ? 'winner' : '', style: `animation-delay:${0.6 + i * 0.08}s` },
-        el('span', { className: `seat-no s-${seatColor(g.seat)}` }, g.seat),
-        el('span', { className: 'name' }, g.name),
-        el('span', { className: 'muted' }, `${g.guess}% · off by ${g.error}`),
-        el('span', { className: 'pts' }, RT.signed(g.points))
-      )
-    );
-    const closest = s.guesses.filter((g) => g.closest);
-    showNumberReveal(
-      s,
-      [bar, track, el('ol', { className: 'nr-list' }, ...best)],
-      closest.length ? `Closest: ${closest.map((g) => g.name).join(', ')}` : ''
-    );
-  }
-
-  /** Sticker Shock: the real price, with the bids around it (over the price above, under below). */
-  function renderClosestReveal(s) {
-    const fmt = (v) => RT.formatValue(v, s.prefix, s.suffix);
-    const price = el(
-      'div',
-      { className: 'price-reveal' },
-      el('span', { className: 'pr-label' }, 'The actual answer'),
-      el('span', { className: 'pr-value' }, fmt(s.answer))
-    );
-    if (!s.guesses.length) return showNumberReveal(s, [price, el('p', { className: 'muted' }, 'Nobody guessed.')], '');
-
-    // Show the bids nearest the price: a few over it, more under it.
-    const over = s.guesses.filter((g) => g.over); // highest first
-    const under = s.guesses.filter((g) => !g.over);
-    const shownOver = over.slice(-3);
-    const shownUnder = under.slice(0, 6);
-    const row = (g, i) =>
-      el(
-        'li',
-        { className: g.over ? 'over' : g.winner ? 'winner' : '', style: `animation-delay:${0.5 + i * 0.07}s` },
-        el('span', { className: `seat-no s-${seatColor(g.seat)}` }, g.seat),
-        el('span', { className: 'name' }, g.name),
-        el('span', { className: 'bid' }, fmt(g.value)),
-        el('span', { className: 'pts' }, g.over ? 'over' : g.exact ? 'exact! ' + RT.signed(g.points) : RT.signed(g.points))
-      );
-    const rows = [];
-    if (over.length > shownOver.length) rows.push(el('li', { className: 'more' }, `+ ${over.length - shownOver.length} more over`));
-    shownOver.forEach((g) => rows.push(row(g, rows.length)));
-    rows.push(el('li', { className: 'actual', style: `animation-delay:${0.5 + rows.length * 0.07}s` }, el('span', {}, '▶'), el('span', { className: 'name' }, 'Actual'), el('span', { className: 'bid' }, fmt(s.answer)), el('span', {})));
-    shownUnder.forEach((g) => rows.push(row(g, rows.length)));
-    if (under.length > shownUnder.length) rows.push(el('li', { className: 'more' }, `+ ${under.length - shownUnder.length} more under`));
-
-    const winners = s.guesses.filter((g) => g.winner);
-    showNumberReveal(
-      s,
-      [price, el('ol', { className: 'ladder' }, ...rows)],
-      winners.length ? `Winning bid: ${winners.map((g) => g.name).join(', ')}` : 'Everyone went over!'
     );
   }
 
@@ -734,7 +553,7 @@
             { className: 'block' },
             el('span', { className: 'medal' }, medals[i]),
             el('span', { className: 'pscore' }, p.score.toLocaleString()),
-            el('small', {}, `${p.correct}/${s.total} ${s.stat}`)
+            el('small', {}, `${p.correct}/${s.total} correct`)
           )
         )
       )
@@ -757,7 +576,6 @@
   $('#start-btn').addEventListener('click', () => send('host:start'));
   $('#q-next').addEventListener('click', () => send('host:next'));
   $('#w-next').addEventListener('click', () => send('host:next'));
-  $('#nr-next').addEventListener('click', () => send('host:next'));
   $('#score-next').addEventListener('click', () => send('host:next'));
   $('#lock-btn').addEventListener('click', () => send('host:lock', { locked: !current?.locked }));
 
@@ -781,7 +599,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.target.closest('input, textarea, button')) return;
     if (e.key !== ' ' && e.key !== 'ArrowRight' && e.key !== 'PageDown') return;
-    const btn = ['#start-btn', '#w-next', '#q-next', '#nr-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
+    const btn = ['#start-btn', '#w-next', '#q-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
     if (btn) {
       e.preventDefault();
       btn.click();

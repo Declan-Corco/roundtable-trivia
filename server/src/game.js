@@ -1,50 +1,33 @@
 // One Game = one lobby with one host screen and many players.
-// The server is authoritative: it owns the timers, the answers and the scores.
+// The server is authoritative: it owns the timers, the bets, the answers and the scores.
+//
+// Each question runs: bet (the category is shown, everyone bets some of their points)
+// → get ready → answer A-D → reveal (right answers win their bet, wrong ones lose it) → standings.
 const crypto = require('crypto');
-const { MAX_NUMBER } = require('./trivia');
 
 const INTRO_MS = 4000; // "Get ready" screen before answers open
 const HOST_GRACE_MS = 2 * 60 * 1000; // host can refresh/reconnect within this window
 const LOBBY_DROP_MS = 60 * 1000; // disconnected players are removed from the lobby after this
 const FINISHED_TTL_MS = 15 * 60 * 1000; // finished games are cleaned up after this
-const MAX_STREAK_BONUS = 500;
 const TABLE_MIN_SEATS = 8; // seats drawn around an empty table
 const TABLE_GROW_BY = 4; // seats added each time the table fills up
-const RECONNECT_GRACE_MS = 15 * 1000; // a question won't end early while a player is reconnecting
+const RECONNECT_GRACE_MS = 15 * 1000; // a phase won't end early while a player is reconnecting
 
-// Wager Wars
 const START_BANK = 1000; // everyone starts with this many points to bet with
 const WAGER_FLOOR = 500; // you can always bet up to this much, even with fewer points
 
-// Split Decision: 1,000 for a perfect guess, 25 fewer per percentage point off, +250 for the closest.
-const SPLIT_PER_POINT = 25;
-const SPLIT_CLOSEST_BONUS = 250;
-
-// Sticker Shock: the closest bid without going over wins 1,000 (1,500 if exact). Other bids under the
-// price score up to 500, in proportion to how close they got. Bids over the price score nothing.
-const BID_WIN = 1000;
-const BID_EXACT_BONUS = 500;
-const BID_UNDER_MAX = 500;
-
-/** How players answer in each scoring mode (see games.js). */
-const INPUT = { correct: 'choice', majority: 'choice', wager: 'choice', split: 'split', closest: 'number' };
-
-const EPS = 1e-9;
 const newToken = () => crypto.randomBytes(18).toString('base64url');
+/** What a right answer pays per point bet: double-points questions pay 2x, practice questions 0. */
 const multiplier = (q) => (q.points === 'double' ? 2 : q.points === 'none' ? 0 : 1);
 
 class Game {
-  constructor({ io, pin, set, gameId = 'trivia', gameName = 'Trivia', mode = 'correct', stat = 'correct', wagerTime = 15, joinUrl, qr, maxPlayers, onDispose }) {
+  constructor({ io, pin, set, gameName = 'Trivia', wagerTime = 15, joinUrl, qr, maxPlayers, onDispose }) {
     this.io = io;
     this.pin = pin;
     this.set = set;
-    this.gameId = gameId;
     this.gameName = gameName;
-    this.mode = mode; // 'correct' | 'majority' | 'wager' | 'split' | 'closest' — see games.js
-    this.input = INPUT[mode] || 'choice'; // what the phones show: A-D buttons, A/B + a % slider, or a keypad
-    this.stat = stat; // what correctCount means on the final screens, e.g. "correct"
-    this.wagerTime = wagerTime; // seconds to place a bet (Wager Wars)
-    this.lastReveal = null; // what the host screen shows after a question (mode-specific)
+    this.wagerTime = wagerTime; // seconds to place a bet
+    this.lastReveal = null; // what the host screen shows after a question
     this.joinUrl = joinUrl;
     this.qr = qr;
     this.maxPlayers = maxPlayers;
@@ -133,12 +116,12 @@ class Game {
       token: newToken(),
       name,
       seat: this.freeSeat(), // the lowest empty seat, so leavers' seats get reused
-      score: this.mode === 'wager' ? START_BANK : 0,
+      score: START_BANK,
       streak: 0,
       correctCount: 0,
       lastPoints: 0,
-      answer: null, // for the current question: { index?, guess?, value?, ms }
-      wager: null, // Wager Wars: the bet on the current question
+      answer: null, // for the current question: { index, ms }
+      wager: null, // the bet on the current question
       lastResult: null,
       socketId: null,
       connected: false,
@@ -295,7 +278,7 @@ class Game {
     } else if (this.state === 'scoreboard') {
       this.nextQuestion();
     } else if (this.state === 'wager') {
-      this.startIntro(); // "Skip" — close the bets now
+      this.startIntro(); // "Close bets" — anyone who hasn't bet is betting nothing
     } else if (this.state === 'question') {
       this.reveal(); // "Skip" — end the question now
     }
@@ -308,11 +291,10 @@ class Game {
       p.answer = null;
       p.wager = null;
     }
-    if (this.mode === 'wager') this.openWagers();
-    else this.startIntro();
+    this.openWagers();
   }
 
-  /** Wager Wars: show the next question's category and let everyone bet before it's asked. */
+  /** Shows the next question's category and lets everyone bet before it's asked. */
   openWagers() {
     clearTimeout(this.timer);
     this.state = 'wager';
@@ -360,33 +342,15 @@ class Game {
     this.timer = setTimeout(() => this.reveal(), q.time * 1000 + 250); // small grace for latency
   }
 
-  /** Checks a submitted answer against what this game's phones can send. */
-  parseAnswer(raw) {
-    const q = this.question;
-    if (this.input === 'number') {
-      const v = Number(typeof raw.value === 'string' ? raw.value.trim() : raw.value);
-      if (raw.value == null || raw.value === '' || !Number.isFinite(v) || v < 0 || v > MAX_NUMBER) {
-        throw new Error('Type a number first.');
-      }
-      return { value: Math.round(v * 10000) / 10000 };
-    }
-    const i = Number(raw.index);
-    if (!Number.isInteger(i) || i < 0 || i >= q.answers.length) throw new Error('Invalid answer.');
-    if (this.input === 'split') {
-      const g = Number(raw.guess);
-      if (raw.guess == null || !Number.isFinite(g) || g < 0 || g > 100) throw new Error('Guess a percentage from 0 to 100.');
-      return { index: i, guess: Math.round(g) };
-    }
-    return { index: i };
-  }
-
-  submitAnswer(playerId, raw = {}) {
+  submitAnswer(playerId, index) {
     if (this.state !== 'question') throw new Error('Too late — answers are closed.');
     const player = this.players.get(playerId);
     if (!player) throw new Error('You are not in this game.');
     if (player.answer) throw new Error('You already answered.');
+    const i = Number(index);
+    if (!Number.isInteger(i) || i < 0 || i >= this.question.answers.length) throw new Error('Invalid answer.');
 
-    player.answer = { ...this.parseAnswer(raw), ms: Date.now() - this.questionStartedAt };
+    player.answer = { index: i, ms: Date.now() - this.questionStartedAt };
     this.touch();
     this.sendPlayerState(player);
     this.sendProgress();
@@ -414,149 +378,29 @@ class Game {
 
   // ------------------------------------------------------------- scoring
 
-  /**
-   * A-D questions: Trivia, Majority Rules and Wager Wars.
-   * Returns per-player results and what the host screen shows.
-   */
-  scoreChoice(q) {
-    const counts = new Array(q.answers.length).fill(0);
-    for (const p of this.players.values()) if (p.answer) counts[p.answer.index] += 1;
-
-    // Which answers score: the right ones, or the most popular ones (Majority Rules; ties all count).
-    let winning = q.correct;
-    if (this.mode === 'majority') {
-      const top = Math.max(0, ...counts);
-      winning = top === 0 ? [] : counts.flatMap((c, i) => (c === top ? [i] : []));
-    }
-
-    const limitMs = q.time * 1000;
-    const results = new Map();
-    for (const p of this.players.values()) {
-      const correct = Boolean(p.answer && winning.includes(p.answer.index));
-      let points = 0;
-      if (this.mode === 'wager') {
-        // Win the bet (twice over on a double-points question), or lose it. Unanswered loses too.
-        const wager = p.wager ?? 0;
-        if (q.points !== 'none') points = correct ? wager * multiplier(q) : -Math.min(wager, p.score);
-        results.set(p, { correct, points, wager });
-      } else {
-        // Faster answers earn more: 1000 points instantly, down to 500 at the buzzer.
-        if (correct) points = Math.round(1000 * (1 - Math.min(1, p.answer.ms / limitMs) / 2)) * multiplier(q);
-        results.set(p, { correct, points, streakBonus: correct && q.points !== 'none' });
-      }
-    }
-
-    const reveal = {
-      answers: q.answers,
-      correct: winning,
-      counts,
-      answered: counts.reduce((a, b) => a + b, 0),
-      correctCount: winning.reduce((sum, i) => sum + (counts[i] || 0), 0),
-    };
-    if (this.mode === 'wager') {
-      // The biggest swing each way, for a line on the host screen.
-      const swings = [...results].map(([p, r]) => ({ name: p.name, seat: p.seat, points: r.points }));
-      const best = swings.reduce((a, b) => (b.points > (a?.points ?? 0) ? b : a), null);
-      const worst = swings.reduce((a, b) => (b.points < (a?.points ?? 0) ? b : a), null);
-      reveal.bets = { biggestWin: best, biggestLoss: worst };
-    }
-    return { results, reveal };
-  }
-
-  /** Split Decision: everyone picked A or B and guessed what % of the room picked A. */
-  scoreSplit(q) {
-    const counts = [0, 0];
-    const voters = [...this.players.values()].filter((p) => p.answer);
-    for (const p of voters) counts[p.answer.index] += 1;
-    const pct = voters.length ? (100 * counts[0]) / voters.length : null;
-
-    const results = new Map();
-    const guesses = [];
-    if (pct != null) {
-      const best = Math.min(...voters.map((p) => Math.abs(p.answer.guess - pct)));
-      for (const p of voters) {
-        const error = Math.abs(p.answer.guess - pct);
-        const closest = error - best < EPS;
-        const points =
-          Math.round(Math.max(0, 1000 - SPLIT_PER_POINT * error) + (closest ? SPLIT_CLOSEST_BONUS : 0)) * multiplier(q);
-        const err = Math.round(error * 10) / 10;
-        results.set(p, {
-          correct: closest,
-          points,
-          choice: p.answer.index,
-          guess: p.answer.guess,
-          pct: Math.round(pct),
-          error: err,
-          splitA: q.answers[0],
-        });
-        guesses.push({ seat: p.seat, name: p.name, guess: p.answer.guess, error: err, points, closest });
-      }
-      guesses.sort((a, b) => a.error - b.error || a.name.localeCompare(b.name));
-    }
-    return {
-      results,
-      reveal: { answers: q.answers, counts, pct: pct == null ? null : Math.round(pct * 10) / 10, guesses, answered: voters.length },
-    };
-  }
-
-  /** Sticker Shock: closest without going over. */
-  scoreClosest(q) {
-    const actual = q.answer;
-    const bidders = [...this.players.values()].filter((p) => p.answer);
-    const under = bidders.map((p) => p.answer.value).filter((v) => v <= actual + EPS);
-    const top = under.length ? Math.max(...under) : null;
-
-    const results = new Map();
-    const guesses = [];
-    for (const p of bidders) {
-      const value = p.answer.value;
-      const over = value > actual + EPS;
-      const winner = !over && Math.abs(value - top) < EPS;
-      const exact = winner && Math.abs(value - actual) < EPS;
-      let points = 0;
-      if (winner) points = BID_WIN + (exact ? BID_EXACT_BONUS : 0);
-      else if (!over && actual > 0) points = Math.round((BID_UNDER_MAX * value) / actual);
-      points *= multiplier(q);
-      results.set(p, { correct: winner, points, value, over, winner, exact, actual, prefix: q.prefix, suffix: q.suffix });
-      guesses.push({ seat: p.seat, name: p.name, value, over, winner, exact, points });
-    }
-    guesses.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
-    return {
-      results,
-      reveal: {
-        answer: actual,
-        prefix: q.prefix,
-        suffix: q.suffix,
-        guesses,
-        answered: bidders.length,
-        winners: guesses.filter((g) => g.winner).length,
-      },
-    };
-  }
-
+  /** Right answers win their bet (twice over on a double-points question); wrong or no answer loses it. */
   reveal() {
     if (this.state !== 'question') return;
     clearTimeout(this.timer);
     const q = this.question;
-    const scorer = { split: 'scoreSplit', number: 'scoreClosest' }[this.input] || 'scoreChoice';
-    const { results, reveal } = this[scorer](q);
+
+    const counts = new Array(q.answers.length).fill(0);
+    for (const p of this.players.values()) if (p.answer) counts[p.answer.index] += 1;
 
     for (const p of this.players.values()) {
-      const r = results.get(p) || { correct: false, points: 0 };
-      if (r.correct) {
+      const correct = Boolean(p.answer && q.correct.includes(p.answer.index));
+      const wager = p.wager ?? 0;
+      let points = 0;
+      if (q.points !== 'none') points = correct ? wager * multiplier(q) : -Math.min(wager, p.score);
+      if (correct) {
         p.streak += 1;
         p.correctCount += 1;
       } else {
         p.streak = 0;
       }
-      let points = r.points;
-      if (r.streakBonus) points += Math.min((p.streak - 1) * 100, MAX_STREAK_BONUS);
-      const before = p.score;
-      p.score = Math.max(0, p.score + points);
-      points = p.score - before; // a lost bet can't take a score below 0
+      p.score += points;
       p.lastPoints = points;
-      const { streakBonus, ...extra } = r;
-      p.lastResult = { ...extra, answered: !!p.answer, correct: r.correct, points, streak: p.streak, mode: this.mode, input: this.input };
+      p.lastResult = { answered: !!p.answer, correct, wager, points, streak: p.streak };
     }
 
     // Rank before this question, so the standings can show who moved up or down.
@@ -575,7 +419,19 @@ class Game {
       });
     });
 
-    this.lastReveal = reveal;
+    // The biggest swing each way, for a line on the host screen.
+    const swings = this.seated().map((p) => ({ name: p.name, seat: p.seat, points: p.lastPoints }));
+    const biggestWin = swings.reduce((a, b) => (b.points > (a?.points ?? 0) ? b : a), null);
+    const biggestLoss = swings.reduce((a, b) => (b.points < (a?.points ?? 0) ? b : a), null);
+
+    this.lastReveal = {
+      answers: q.answers,
+      correct: q.correct,
+      counts,
+      answered: counts.reduce((a, b) => a + b, 0),
+      correctCount: q.correct.reduce((sum, i) => sum + (counts[i] || 0), 0),
+      bets: { biggestWin, biggestLoss },
+    };
     this.state = 'reveal';
     this.touch();
     this.broadcastState();
@@ -630,11 +486,7 @@ class Game {
     const common = {
       pin: this.pin,
       title: this.set.title,
-      game: this.gameId,
       gameName: this.gameName,
-      mode: this.mode,
-      input: this.input,
-      stat: this.stat,
       index: this.qIndex,
       total: this.total,
     };
@@ -677,8 +529,6 @@ class Game {
           credit: q.credit || null, // e.g. "Open Trivia DB · CC BY-SA 4.0" for online questions
           image: q.image,
           answers: q.answers,
-          prefix: q.prefix || '',
-          suffix: q.suffix || '',
           points: q.points,
           time: q.time,
           timeLeft: this.timeLeft(),
@@ -693,8 +543,7 @@ class Game {
           phase: 'reveal',
           ...common,
           question: q.question,
-          credit: q.credit || null, // e.g. "Open Trivia DB · CC BY-SA 4.0" for online questions
-          note: q.note || null,
+          credit: q.credit || null,
           image: q.image,
           playerCount: this.players.size,
           isLast: this.isLastQuestion,
@@ -741,9 +590,6 @@ class Game {
       score: p.score,
       index: this.qIndex,
       total: this.total,
-      mode: this.mode,
-      input: this.input,
-      stat: this.stat,
       gameName: this.gameName,
     };
   }
@@ -751,19 +597,8 @@ class Game {
   /** What this player sent this phase, so their phone can show it (even after a refresh). */
   mine(p) {
     if (this.state === 'wager') return { kind: 'wager', wager: p.wager };
-    const a = p.answer;
-    if (!a) return null;
-    const q = this.question;
-    return {
-      kind: this.input,
-      index: a.index ?? null,
-      text: a.index != null ? q.answers[a.index] : null,
-      guess: a.guess ?? null,
-      splitA: this.input === 'split' ? q.answers[0] : null,
-      value: a.value ?? null,
-      prefix: q.prefix || '',
-      suffix: q.suffix || '',
-    };
+    if (!p.answer) return null;
+    return { kind: 'answer', index: p.answer.index, text: this.question.answers[p.answer.index], wager: p.wager ?? 0 };
   }
 
   sendPlayerState(p) {
@@ -790,7 +625,7 @@ class Game {
               };
         break;
       case 'intro':
-        payload = { phase: 'intro', ...base, timeLeft: this.timeLeft(), points: q.points, wager: this.mode === 'wager' ? p.wager ?? 0 : null };
+        payload = { phase: 'intro', ...base, timeLeft: this.timeLeft(), points: q.points, wager: p.wager ?? 0 };
         break;
       case 'question':
         payload = p.answer
@@ -800,9 +635,7 @@ class Game {
               ...base,
               answers: q.answers,
               question: q.question,
-              prefix: q.prefix || '',
-              suffix: q.suffix || '',
-              wager: this.mode === 'wager' ? p.wager ?? 0 : null,
+              wager: p.wager ?? 0,
               time: q.time,
               timeLeft: this.timeLeft(),
             };
