@@ -83,7 +83,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
   text-decoration: none;
   white-space: nowrap;
 }
-.wordmark .wm-o { width: 1.12em; height: 1.12em; margin: 0 -0.05em; align-self: center; transform: translateY(0.13em); }
+.wordmark .wm-o { width: 1.12em; height: 1.12em; margin: 0 -0.05em; align-self: center; transform: translateY(0.062em); } /* table centred on the lowercase letters */
 .tagline {
   font-weight: 650;
   letter-spacing: 0.32em;
