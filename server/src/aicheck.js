@@ -2,11 +2,11 @@
 //
 // The local matcher (matcher.js) groups answers instantly. If the server has an Anthropic API key
 // (ANTHROPIC_API_KEY), Claude then checks the round, in one request, while the grading screen is up:
-//   - a verdict for EVERY answer: does it fit the category? (with a short reason when it doesn't)
-//   - merge: groups that are really the same answer ("Doritos" + "chips")
+//   - a verdict for EVERY answer: does it fit the category (with a short reason when it doesn't), and
+//     is it the same answer as one in another group ("Keurig" -> "coffee maker")?
 //   - split: answers that don't mean the same as the rest of their group
-// Asking for a verdict on every answer (rather than "list the misfits") makes Claude actually judge
-// each one; an empty list was too easy to return. The host can still undo anything.
+// Asking for a verdict on every answer (rather than "list the misfits" / "list the merges") makes
+// Claude actually consider each one; an empty list was too easy to return. The host can undo anything.
 // Cost: roughly $0.0005-0.001 per round with Claude Haiku 5.5 (see the README). Answers are sent to Anthropic.
 const config = require('./config');
 
@@ -27,10 +27,10 @@ function getClient() {
               id: z.string().describe('the answer id, e.g. a12'),
               fits: z.boolean().describe('true if the answer fits the category as worded'),
               why: z.string().describe('empty if it fits; otherwise a few words on why not'),
+              same_as: z.string().describe('id of an answer in a DIFFERENT group that means the same thing, or empty'),
             })
           )
           .describe('one verdict for every answer id, in the order given'),
-        merge: z.array(z.array(z.string())).describe('sets of group ids that are really the same answer'),
         split: z.array(z.string()).describe('ids of answers that do not mean the same thing as the rest of their group'),
       });
       return { Anthropic, client: new Anthropic({ apiKey: config.ANTHROPIC_API_KEY, maxRetries: 1, timeout: TIMEOUT_MS }), format: zodOutputFormat(Result) };
@@ -44,17 +44,21 @@ const enabled = () => !!config.ANTHROPIC_API_KEY;
 
 const SYSTEM = `You referee "Only One", a party game. Each round has a category, like "Things in a dorm room". Teams list as many answers as they can; an answer only scores if no other team wrote the same thing.
 
-The answers have already been grouped by a quick automatic matcher. Do three things.
+The answers have already been grouped by a quick automatic matcher. Do two things.
 
-1. verdicts - judge EVERY answer against the category exactly as it is worded. Give one verdict per answer id.
+1. verdicts - judge EVERY answer. Give one verdict per answer id, with "fits", "why" and "same_as".
+
+   fits / why - does the answer fit the category exactly as it is worded?
    - Read the whole category. Words like "not", "shouldn't", "never", "without", "worst", "least" or "bad" flip its meaning: for "Things you shouldn't say on a first date", a compliment such as "You look great" does NOT fit, because it is something you should say.
    - Be relaxed about how an answer is written: typos, slang, brand names, a specific example of the category, or a creative stretch that a fair group of friends would accept all fit.
    - An answer does not fit if it means the opposite of the category, has nothing to do with it, is nonsense, or is a joke that ignores the category.
    - For answers that don't fit, give a short reason in "why" (for example "a compliment - fine to say"). Leave "why" empty for answers that fit.
-2. merge - groups that are really the same answer written differently: synonyms (couch / sofa), a brand and the thing it is (Keurig / coffee maker), abbreviations (TV / television), spelling or plural differences, or the same remark worded differently.
-3. split - answers that do not mean the same thing as the rest of their group. Different kinds of something are different answers (desk lamp / lava lamp, bunk bed / lofted bed, gun / grappling gun).
 
-For merge and split, when unsure, leave the grouping as it is. Use only the ids you are given.`;
+   same_as - check every answer against the answers in the OTHER groups. If one of them is really the same answer written differently, put its id here; otherwise leave it empty. The same answer means: synonyms (couch / sofa), a brand and the thing it is (Keurig / coffee maker, Xbox / game console, Doritos / chips), abbreviations (TV / television), spelling or plural differences, or the same remark worded differently ("ur ugly" / "you're ugly"). Different kinds of something are different answers (desk lamp / lava lamp, bunk bed / lofted bed).
+
+2. split - answers that do not mean the same thing as the rest of their own group (for example "grappling hook" grouped with "gun"). When unsure, leave the group as it is.
+
+Use only the ids you are given.`;
 
 /**
  * Asks Claude to check a round.
@@ -85,15 +89,29 @@ async function check(category, groups) {
   const out = response.parsed_output;
   if (!out) throw new Error("the reply couldn't be read");
   // Keep only ids that were actually in the request.
-  const groupIds = new Set(groups.map((g) => g.id));
-  const entryIds = new Set(groups.flatMap((g) => g.entries.map((e) => e.id)));
-  const verdicts = out.verdicts.filter((v) => entryIds.has(v.id));
+  const groupOf = new Map(groups.flatMap((g) => g.entries.map((e) => [e.id, g.id])));
+  const verdicts = out.verdicts.filter((v) => groupOf.has(v.id));
+  // "same_as" pairs -> sets of groups to merge (a + b and b + c become one set a + b + c).
+  const parent = new Map();
+  const root = (g) => (parent.get(g) && parent.get(g) !== g ? root(parent.get(g)) : g);
+  for (const v of verdicts) {
+    if (!v.fits || !groupOf.has(v.same_as)) continue;
+    const a = root(groupOf.get(v.id));
+    const b = root(groupOf.get(v.same_as));
+    if (a !== b) parent.set(b, a);
+  }
+  const sets = new Map();
+  for (const g of new Set(groupOf.values())) {
+    const r = root(g);
+    if (!sets.has(r)) sets.set(r, []);
+    sets.get(r).push(g);
+  }
   return {
     misfits: verdicts.filter((v) => !v.fits).map((v) => ({ id: v.id, why: String(v.why || '').trim().slice(0, 80) })),
-    merge: out.merge.map((set) => set.filter((id) => groupIds.has(id))).filter((set) => set.length > 1),
-    split: out.split.filter((id) => entryIds.has(id)),
+    merge: [...sets.values()].filter((set) => set.length > 1),
+    split: out.split.filter((id) => groupOf.has(id)),
     judged: new Set(verdicts.map((v) => v.id)).size, // how many answers got a verdict (should be all)
-    total: entryIds.size,
+    total: groupOf.size,
     usage: response.usage,
     ms: Date.now() - started,
   };
