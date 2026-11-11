@@ -34,6 +34,7 @@
   --a2: #fcc12d; --a2-edge: #d99a0b;
   --a3: #b97a45; --a3-edge: #8f5a2f;
 
+  --bar-h: 64px;           /* the host screen's top bar */
   --radius: 18px;
   --radius-sm: 12px;
   --shadow-card: 0 1px 2px rgba(74, 44, 29, 0.08), 0 10px 28px -8px rgba(74, 44, 29, 0.22);
@@ -111,17 +112,21 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 @keyframes orbit { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { transform: scale(1.04); } }
 
+/* The host's top bar: a solid bar of its own. Screens start below it, and it stays put when the page scrolls. */
 .topbar {
-  position: fixed;
-  top: 0; left: 0; right: 0;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--bar-h);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 18px;
-  z-index: 10;
-  pointer-events: none;
+  gap: 12px;
+  padding: 0 18px;
+  background: var(--white);
+  border-bottom: 1px solid var(--cream-deep);
+  box-shadow: 0 2px 10px -6px rgba(74, 44, 29, 0.25);
 }
-.topbar > * { pointer-events: auto; }
 .topbar .wordmark { font-size: 1.6rem; }
 .topbar .actions { display: flex; align-items: center; gap: 8px; }
 /* The PIN, top right, whenever a table is open (so people can join late) */
@@ -406,7 +411,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 
 /* ================================================================= HOST */
 
-.host .screen { padding-top: 76px; }
+.host .screen { min-height: calc(100dvh - var(--bar-h)); }
 
 /* Setup */
 .setup { width: min(960px, 100%); display: flex; flex-direction: column; gap: 18px; }
@@ -608,7 +613,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
   align-items: center;
 }
 .lobby-stage { display: flex; justify-content: center; }
-#lobby-table { width: min(100%, calc(100dvh - 130px), 640px); }
+#lobby-table { width: min(100%, calc(100dvh - var(--bar-h) - 80px), 640px); }
 .lobby-side { display: flex; flex-direction: column; gap: 16px; text-align: left; align-self: stretch; justify-content: center; }
 .join-card {
   background: var(--white);
@@ -672,7 +677,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .intro h1 { font-size: clamp(1.9rem, 5vw, 3.8rem); font-weight: 650; margin: 0; max-width: 1100px; line-height: 1.15; animation: pop-in 0.45s ease; }
 
 /* Question & reveal: answers flank the table and face it */
-.host .question-screen { justify-content: stretch; align-items: stretch; gap: 12px; padding: 70px 20px 16px; }
+.host .question-screen { justify-content: stretch; align-items: stretch; gap: 12px; padding: 16px 20px; }
 .q-top { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .q-counter { font-weight: 650; color: var(--teal); font-size: 0.95rem; letter-spacing: 0.18em; text-transform: uppercase; }
 .q-text { margin: 0; font-size: clamp(1.5rem, 3.1vw, 2.7rem); font-weight: 650; line-height: 1.15; max-width: 1150px; }
@@ -777,7 +782,7 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .chip.gold { background: var(--yellow); color: var(--tile-ink); }
 
 /* Bets: the category, and the bets coming in around the table */
-.host .wager-screen { gap: 14px; padding: 70px 20px 16px; }
+.host .wager-screen { gap: 14px; padding: 16px 20px; }
 .w-category { margin: 0; font-size: clamp(2.2rem, 5.5vw, 4.4rem); font-weight: 650; line-height: 1.1; animation: pop-in 0.45s ease; }
 .wager-screen .chip { font-size: 1.1rem; }
 .w-table { width: clamp(200px, min(34vw, calc(100dvh - 420px)), 440px); }
