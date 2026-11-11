@@ -2,8 +2,10 @@
 //
 // The local matcher (matcher.js) groups answers instantly. If the server has an Anthropic API key
 // (ANTHROPIC_API_KEY), Claude then checks the round, in one request, while the grading screen is up:
-//   - a verdict for EVERY answer: does it fit the category (with a short reason when it doesn't), and
-//     is it the same answer as one in another group ("Keurig" -> "coffee maker")?
+//   - a verdict for EVERY answer: first a note on what the answer is ("an ice-cream flavor"), then
+//     whether it fits the category, and whether it's the same answer as one in another group
+//     ("Keurig" -> "coffee maker"). Writing the note first stops neighbouring-category answers
+//     ("cookies and cream" for "Chip flavors") slipping through.
 //   - split: answers that don't mean the same as the rest of their group
 // Asking for a verdict on every answer (rather than "list the misfits" / "list the merges") makes
 // Claude actually consider each one; an empty list was too easy to return. The host can undo anything.
@@ -25,8 +27,8 @@ function getClient() {
           .array(
             z.object({
               id: z.string().describe('the answer id, e.g. a12'),
-              fits: z.boolean().describe('true if the answer fits the category as worded'),
-              why: z.string().describe('empty if it fits; otherwise a few words on why not'),
+              note: z.string().describe('a few words on what this answer is, written BEFORE deciding fits'),
+              fits: z.boolean().describe('true if players would accept it as one of the things the category asks for'),
               same_as: z.string().describe('id of an answer in a DIFFERENT group that means the same thing, or empty'),
             })
           )
@@ -46,14 +48,15 @@ const SYSTEM = `You referee "Only One", a party game. Each round has a category,
 
 The answers have already been grouped by a quick automatic matcher. Do two things.
 
-1. verdicts - judge EVERY answer. Give one verdict per answer id, with "fits", "why" and "same_as".
+1. verdicts - judge EVERY answer. Give one verdict per answer id, with "note", "fits" and "same_as", in that order.
 
-   fits / why - does the answer fit the category exactly as it is worded?
-   - Read the whole category. Words like "not", "shouldn't", "never", "without", "worst", "least" or "bad" flip its meaning: for "Things you shouldn't say on a first date", a compliment such as "You look great" does NOT fit, because it is something you should say.
-   - Be relaxed about how an answer is written: typos, slang, brand names, a specific example of the category, or a creative stretch that a fair group of friends would accept all fit.
-   - An answer only has to fit a reasonable reading of the category, not every case: "a dog" fits "Things in a house" even though many houses have no dog. If a fair group of friends would accept it, it fits.
-   - Reject only answers that clearly fail: they mean the opposite of the category, have nothing to do with it, are nonsense, or are a joke that ignores the category.
-   - For answers that don't fit, give a short reason in "why" (for example "a compliment - fine to say"). Leave "why" empty for answers that fit.
+   note - first, say in a few words what the answer actually is ("an ice-cream flavor", "a polite greeting", "a real chip flavor", "a kitchen appliance"). Write it before you decide "fits"; if the answer doesn't fit, this note is the reason shown to the players, so make it clear.
+
+   fits - would most players immediately accept the answer as one of the things the category asks for? Read the category exactly as it is worded.
+   - true: a common, recognisable member of the category, in any wording (typos, slang, brand names, a specific example). It doesn't have to be true in every case: "a dog" fits "Things in a house" even though many houses have no dog.
+   - false: it belongs to a different, neighbouring category - an ice-cream flavor given for "Pizza toppings", a dog breed given for "Cat breeds". Don't accept it just because some novelty product or one-off edge case technically exists.
+   - false: it means the opposite. Words like "not", "shouldn't", "never", "without", "worst", "least" or "bad" flip the category: for "Things you shouldn't say on a first date", a compliment such as "You look great" does not fit, because it is something you should say.
+   - false: it has nothing to do with the category, is nonsense, or is a joke that ignores it.
 
    same_as - check every answer against the answers in the OTHER groups. If one of them is really the same answer written differently, put its id here; otherwise leave it empty. The same answer means: synonyms (couch / sofa), a brand and the thing it is (Keurig / coffee maker, Xbox / game console, Doritos / chips), abbreviations (TV / television), spelling or plural differences, or the same remark worded differently ("ur ugly" / "you're ugly"). Different kinds of something are different answers (desk lamp / lava lamp, bunk bed / lofted bed).
 
@@ -108,7 +111,7 @@ async function check(category, groups) {
     sets.get(r).push(g);
   }
   return {
-    misfits: verdicts.filter((v) => !v.fits).map((v) => ({ id: v.id, why: String(v.why || '').trim().slice(0, 80) })),
+    misfits: verdicts.filter((v) => !v.fits).map((v) => ({ id: v.id, why: String(v.note || '').trim().slice(0, 80) })),
     merge: [...sets.values()].filter((set) => set.length > 1),
     split: out.split.filter((id) => groupOf.has(id)),
     judged: new Set(verdicts.map((v) => v.id)).size, // how many answers got a verdict (should be all)

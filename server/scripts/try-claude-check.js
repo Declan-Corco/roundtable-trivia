@@ -3,7 +3,7 @@
 //
 //   cd /opt/roundtable/server && sudo node scripts/try-claude-check.js
 //
-// Uses ANTHROPIC_API_KEY from the environment, or from /etc/roundtable.env. Costs about a tenth of a cent.
+// Uses ANTHROPIC_API_KEY from the environment, or from /etc/roundtable.env. Costs about a quarter of a cent.
 const fs = require('fs');
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -36,6 +36,16 @@ const ROUNDS = [
     category: 'Things a superhero needs',
     groups: [['cape'], ['mask'], ['grappling hook'], ['gun', 'laser gun'], ['banana'], ['utility belt'], ['spreadsheet'], ['a sidekick'], ['secret identity']],
     misfits: ['banana', 'spreadsheet'],
+  },
+  {
+    category: 'Chip flavors',
+    groups: [['Barbecue'], ['Cheese'], ['Cookies and Cream'], ['Cool ranch'], ['Plain'], ['Sour cream'], ['Spicy Nacho'], ['dill pickle'], ['ketchup'], ['salt and vinegar'], ['mint chocolate chip']],
+    misfits: ['Cookies and Cream', 'mint chocolate chip'],
+  },
+  {
+    category: 'Ice cream flavors',
+    groups: [['cookies and cream'], ['mint chocolate chip'], ['vanilla'], ['rocky road'], ['barbecue'], ['strawberry'], ['salt and vinegar']],
+    misfits: ['barbecue', 'salt and vinegar'],
   },
   {
     category: 'Things in a dorm room',
