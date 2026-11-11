@@ -53,7 +53,7 @@ The answers have already been grouped by a quick automatic matcher. Do two thing
    note - first, say in a few words what the answer actually is ("an ice-cream flavor", "a polite greeting", "a real chip flavor", "a kitchen appliance"). Write it before you decide "fits"; if the answer doesn't fit, this note is the reason shown to the players, so make it clear.
 
    fits - would most players immediately accept the answer as one of the things the category asks for? Read the category exactly as it is worded.
-   - true: a common, recognisable member of the category, in any wording (typos, slang, brand names, a specific example). It doesn't have to be true in every case: "a dog" fits "Things in a house" even though many houses have no dog.
+   - true: a common, recognisable member of the category, in any wording (typos, slang, brand names, a specific example). It doesn't have to be true in every case: "a dog" fits "Things in a house" even though many houses have no dog. If a well-known example of the category fits it (a famous character, a common product, a typical situation), the answer fits.
    - false: it belongs to a different, neighbouring category - an ice-cream flavor given for "Pizza toppings", a dog breed given for "Cat breeds". Don't accept it just because some novelty product or one-off edge case technically exists.
    - false: it means the opposite. Words like "not", "shouldn't", "never", "without", "worst", "least" or "bad" flip the category: for "Things you shouldn't say on a first date", a compliment such as "You look great" does not fit, because it is something you should say.
    - false: it has nothing to do with the category, is nonsense, or is a joke that ignores it.
@@ -121,11 +121,16 @@ async function check(category, groups) {
   };
 }
 
-/** Rough cost of one check, for the server log (Claude Haiku 5.5 list prices). */
+// List prices in $ per million tokens [input, output], for the cost shown in the server log.
+const PRICES = { haiku: [0.1, 0.5], sonnet: [2, 10], opus: [4, 20] };
+
+/** Rough cost of one check, at the list price of the model in use. */
 function costOf(usage) {
   if (!usage) return 0;
+  const family = Object.keys(PRICES).find((f) => config.AI_CHECK_MODEL.includes(f)) || 'haiku';
+  const [inPrice, outPrice] = PRICES[family];
   const input = (usage.input_tokens || 0) + (usage.cache_read_input_tokens || 0) + (usage.cache_creation_input_tokens || 0);
-  return (input * 0.1 + (usage.output_tokens || 0) * 0.5) / 1e6;
+  return (input * inPrice + (usage.output_tokens || 0) * outPrice) / 1e6;
 }
 
 module.exports = { enabled, check, costOf };

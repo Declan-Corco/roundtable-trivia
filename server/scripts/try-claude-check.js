@@ -2,6 +2,7 @@
 // Tries the Only One Claude check on a few tricky rounds and shows what Claude decided.
 //
 //   cd /opt/roundtable/server && sudo node scripts/try-claude-check.js
+//   sudo AI_CHECK_MODEL=claude-sonnet-5-5 node scripts/try-claude-check.js   # try another model
 //
 // Uses ANTHROPIC_API_KEY from the environment, or from /etc/roundtable.env. Costs about a quarter of a cent.
 const fs = require('fs');
@@ -10,7 +11,7 @@ if (!process.env.ANTHROPIC_API_KEY) {
   try {
     for (const line of fs.readFileSync('/etc/roundtable.env', 'utf8').split('\n')) {
       const m = line.match(/^\s*(ANTHROPIC_API_KEY|AI_CHECK_MODEL)\s*=\s*(.*?)\s*$/);
-      if (m && m[2]) process.env[m[1]] = m[2];
+      if (m && m[2] && !process.env[m[1]]) process.env[m[1]] = m[2];
     }
   } catch {
     /* no settings file here */
