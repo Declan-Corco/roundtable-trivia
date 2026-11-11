@@ -657,7 +657,8 @@ class Game {
     console.log(
       `[game ${this.pin}] Claude check: judged ${result.judged}/${result.total} answers in ${result.parts} part${result.parts === 1 ? '' : 's'}` +
         (result.failedParts ? ` (${result.failedParts} failed)` : '') + `, rejected ${result.misfits.length}` +
-        (result.relabelled || result.dropped ? ` (fixed ${result.relabelled} mislabelled, ignored ${result.dropped})` : '') + '; ' +
+        (result.distinct && result.distinct < result.total ? ` (${result.distinct} different wordings)` : '') +
+        (result.dropped ? ` (ignored ${result.dropped} unknown)` : '') + '; ' +
         `${u.input_tokens ?? '?'} in / ${u.output_tokens ?? '?'} out tokens, ~$${aicheck.costOf(u).toFixed(5)}, ${(result.ms / 1000).toFixed(1)} s`
     );
     let split = 0;
@@ -684,7 +685,7 @@ class Game {
       if (!e || e.rejected) continue;
       e.rejected = true;
       e.ai = true;
-      e.aiWhy = why; // shown to the host, e.g. "a compliment - fine to say"
+      e.aiWhy = why; // a reason for the host, if Claude gave one (currently it just says good or not)
       rejected++;
     }
     this.ai = { status: 'done', rejected, merged, split };
