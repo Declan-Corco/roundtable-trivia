@@ -51,7 +51,8 @@ The answers have already been grouped by a quick automatic matcher. Do two thing
    fits / why - does the answer fit the category exactly as it is worded?
    - Read the whole category. Words like "not", "shouldn't", "never", "without", "worst", "least" or "bad" flip its meaning: for "Things you shouldn't say on a first date", a compliment such as "You look great" does NOT fit, because it is something you should say.
    - Be relaxed about how an answer is written: typos, slang, brand names, a specific example of the category, or a creative stretch that a fair group of friends would accept all fit.
-   - An answer does not fit if it means the opposite of the category, has nothing to do with it, is nonsense, or is a joke that ignores the category.
+   - An answer only has to fit a reasonable reading of the category, not every case: "a dog" fits "Things in a house" even though many houses have no dog. If a fair group of friends would accept it, it fits.
+   - Reject only answers that clearly fail: they mean the opposite of the category, have nothing to do with it, are nonsense, or are a joke that ignores the category.
    - For answers that don't fit, give a short reason in "why" (for example "a compliment - fine to say"). Leave "why" empty for answers that fit.
 
    same_as - check every answer against the answers in the OTHER groups. If one of them is really the same answer written differently, put its id here; otherwise leave it empty. The same answer means: synonyms (couch / sofa), a brand and the thing it is (Keurig / coffee maker, Xbox / game console, Doritos / chips), abbreviations (TV / television), spelling or plural differences, or the same remark worded differently ("ur ugly" / "you're ugly"). Different kinds of something are different answers (desk lamp / lava lamp, bunk bed / lofted bed).
