@@ -688,7 +688,7 @@ class Game {
               };
         break;
       case 'intro':
-        payload = { phase: 'intro', ...base, timeLeft: this.timeLeft(), points: q.points, wager: p.wager ?? 0 };
+        payload = { phase: 'intro', ...base, question: q.question, category: q.category || null, timeLeft: this.timeLeft(), points: q.points, wager: p.wager ?? 0 };
         break;
       case 'question':
         payload = p.answer

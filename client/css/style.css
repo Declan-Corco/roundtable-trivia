@@ -837,6 +837,11 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 
 .join-card .input-pin { letter-spacing: 0.2em; font-size: 1.7rem; }
 
+/* Get ready: the question, before the answers appear */
+.intro-screen .tagline:empty { display: none; }
+.intro-question { margin: 0; max-width: 640px; font-size: clamp(1.5rem, 7vw, 2.4rem); font-weight: 650; line-height: 1.2; overflow-wrap: anywhere; animation: pop-in 0.35s ease; }
+.intro-hint { margin: 0; }
+
 /* Lobby: a folded place card with your seat number */
 .place-card {
   position: relative;

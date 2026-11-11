@@ -137,6 +137,8 @@
 
       case 'intro': {
         $('#intro-counter').textContent = `${s.gameName} · Question ${s.index + 1} of ${s.total}`;
+        $('#intro-category').textContent = s.category || '';
+        $('#intro-question').textContent = s.question || 'Get ready!';
         $('#intro-double').hidden = s.points !== 'double';
         const wager = $('#intro-wager');
         wager.hidden = s.wager == null;
