@@ -5,6 +5,7 @@
 //   sudo AI_CHECK_MODEL=claude-sonnet-5-5 node scripts/try-claude-check.js   # try another model
 //
 // Uses ANTHROPIC_API_KEY from the environment, or from /etc/roundtable.env. Costs about half a cent.
+// The rounds here are checked by the review only (each answer starts in its own group).
 const fs = require('fs');
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -53,6 +54,20 @@ const ROUNDS = [
     groups: [['mini fridge'], ['Keurig'], ['coffee maker'], ['couch'], ['volcano'], ['string lights'], ['giraffe'], ['bunk bed']],
     misfits: ['volcano', 'giraffe'],
     merges: [['Keurig', 'coffee maker']],
+  },
+  {
+    // A broad answer must not knock out specific ones; real synonyms still merge.
+    category: 'Birds',
+    groups: [['bird'], ['parrot'], ['eagle'], ['bald eagle'], ['parakeet'], ['robin'], ['penguin'], ['bat']],
+    misfits: ['bat'],
+    apart: [['bird', 'parrot'], ['bird', 'eagle'], ['eagle', 'bald eagle'], ['parrot', 'parakeet']],
+  },
+  {
+    category: 'Things in a mini fridge',
+    groups: [['alcohol'], ['beer'], ['vodka'], ['beers'], ['soda'], ['coke'], ['coca cola'], ['pop'], ['leftover pizza'], ['a sofa']],
+    misfits: ['a sofa'],
+    merges: [['coke', 'coca cola'], ['soda', 'pop'], ['beer', 'beers']],
+    apart: [['alcohol', 'beer'], ['alcohol', 'vodka'], ['beer', 'vodka'], ['soda', 'coke']],
   },
   {
     // A full-size round (45 answers, like a 3-table game): checked in parallel parts, so it should be about as quick.
@@ -107,6 +122,17 @@ const ROUNDS = [
       const ok = r.merge.some((set) => pair.every((t) => set.some((g) => groupText[g].includes(t))));
       ok ? right++ : wrong++;
       console.log(`   ${ok ? 'ok  ' : 'MISS'} should merge ${pair.join(' + ')}`);
+    }
+    // Answers that must stay separate answers (a broad term vs a kind of it, or two different kinds).
+    const together = (a, b) => {
+      const ga = groups.find((g) => g.entries.some((e) => e.text === a)).id;
+      const gb = groups.find((g) => g.entries.some((e) => e.text === b)).id;
+      return ga === gb || r.merge.some((set) => set.includes(ga) && set.includes(gb));
+    };
+    for (const pair of round.apart || []) {
+      const ok = !together(...pair);
+      ok ? right++ : wrong++;
+      console.log(`   ${ok ? 'ok  ' : 'WRONG'} ${pair.join(' / ')} kept apart`);
     }
   }
   console.log(`\n${right} right, ${wrong} wrong · total ~$${cost.toFixed(4)} for ${ROUNDS.length} rounds (model ${process.env.AI_CHECK_MODEL || 'claude-haiku-5-5'})`);

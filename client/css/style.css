@@ -878,6 +878,8 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .rv-chip.rej { color: var(--muted); text-decoration: line-through; background: transparent; box-shadow: none; border-color: var(--cream-deep); }
 .rv-chip.sel { border-color: var(--yellow); background: color-mix(in srgb, var(--yellow) 30%, var(--white)); box-shadow: 0 0 0 3px var(--yellow); transform: translateY(-1px); }
 .rv-eq { font-weight: 700; color: var(--ink-soft); padding: 0 2px; }
+.rv-note { font-size: 0.9rem; font-weight: 550; color: var(--ink-soft); margin: 0 6px 0 2px; }
+.rv-item.repeat .rv-chip { box-shadow: none; border-color: var(--cream-deep); color: var(--ink-soft); }
 .rv-tag { margin: 0 6px 0 2px; font-size: 0.72rem; font-weight: 650; letter-spacing: 0.04em; color: var(--ink-soft); font-style: italic; }
 .rv-empty { text-align: center; font-size: 1.2rem; }
 /* How the review went */

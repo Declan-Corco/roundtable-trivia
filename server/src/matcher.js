@@ -12,7 +12,12 @@ const path = require('path');
 const config = require('./config');
 
 const MODEL = 'Xenova/bge-small-en-v1.5';
-const SAME_MEANING = 0.89; // cosine similarity at or above which two answers are grouped (tuned on test pairs)
+// Cosine similarity at or above which two answers are grouped. Strict on purpose: at 0.89 a broad term
+// swallowed specific ones (alcohol = beer 0.90, alcohol = vodka 0.92, soda = coke 0.92), which knocks
+// out every table that wrote the specific answer. Close synonyms still clear it (couch / sofa 0.96,
+// TV / television 0.98, coke / coca cola 0.97); borderline ones (Keurig / coffee maker 0.90) are left
+// for the review step or the host.
+const SAME_MEANING = 0.93;
 
 let embedder = null;
 let loading = null;
@@ -117,7 +122,7 @@ async function group(entries, category) {
   );
   const dim = out.dims[out.dims.length - 1];
   const vectors = groups.map((_, i) => Array.from(out.data.subarray(i * dim, (i + 1) * dim)));
-  let clusters = groups.map((g, i) => ({ ids: [...g.ids], vecs: [vectors[i]] }));
+  let clusters = groups.map((g, i) => ({ ids: [...g.ids], vecs: [vectors[i]], words: [new Set(g.text.split(' '))] }));
   const cosine = (a, b) => {
     let dot = 0;
     let na = 0;
@@ -131,8 +136,12 @@ async function group(entries, category) {
   };
   // Two groups only merge if EVERY answer in one is close to EVERY answer in the other. (Comparing
   // averages let groups chain: "grapple gun" ~ "gun" ~ "laser gun" all ended up as one answer.)
+  // An answer and a longer version of it are different answers: "fridge" / "mini fridge",
+  // "eagle" / "bald eagle", "lamp" / "desk lamp" (the longer one is a specific kind).
+  const narrower = (x, y) => x.size !== y.size && [...(x.size < y.size ? x : y)].every((w) => (x.size < y.size ? y : x).has(w));
   const closeness = (a, b) => {
     let worst = 1;
+    for (const x of a.words) for (const y of b.words) if (narrower(x, y)) return 0;
     for (const x of a.vecs) for (const y of b.vecs) worst = Math.min(worst, cosine(x, y));
     return worst;
   };
@@ -148,7 +157,7 @@ async function group(entries, category) {
     const a = clusters[best.i];
     const b = clusters[best.j];
     clusters = clusters.filter((_, k) => k !== best.i && k !== best.j);
-    clusters.push({ ids: [...a.ids, ...b.ids], vecs: [...a.vecs, ...b.vecs] });
+    clusters.push({ ids: [...a.ids, ...b.ids], vecs: [...a.vecs, ...b.vecs], words: [...a.words, ...b.words] });
   }
   return clusters.map((c) => c.ids);
 }

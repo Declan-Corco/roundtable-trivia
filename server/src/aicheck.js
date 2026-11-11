@@ -57,9 +57,12 @@ good - would most players immediately accept the answer as one of the things the
 - false: it means the opposite. Words like "not", "shouldn't", "never", "without", "worst", "least" or "bad" flip the category: for "Things you shouldn't say on a first date", a compliment such as "You look great" is not good, because it is something you should say.
 - false: it has nothing to do with the category, is nonsense, or is a joke that ignores it.
 
-same_as - if an answer in ANOTHER group is really the same answer written differently, copy that answer exactly; otherwise leave it empty. The same answer means: synonyms (couch / sofa), a brand and the thing it is (Keurig / coffee maker, Xbox / game console, Doritos / chips), abbreviations (TV / television), spelling or plural differences, or the same remark worded differently ("ur ugly" / "you're ugly"). Different kinds of something are different answers (desk lamp / lava lamp, bunk bed / lofted bed).
+same_as - only when two answers name the SAME thing: ask "would the two players be picturing the same thing?" If an answer in ANOTHER group is the same thing named differently, copy that answer exactly; otherwise leave it empty.
+- Same: synonyms (couch / sofa, soda / pop), abbreviations (TV / television), spelling or plural differences, a brand name used for the item itself (Keurig / coffee maker, Coca-Cola / Coke), or the same remark worded differently ("ur ugly" / "you're ugly").
+- NOT the same: a broad term and one kind of it. "bird" is not the same as "parrot", "alcohol" is not "beer" or "vodka", "candy" is not "Skittles", "fruit" is not "apple" - the broad answer covers many different things players would list separately, so it must never knock out the specific ones.
+- NOT the same: two different kinds of something (beer / vodka, parrot / parakeet, desk lamp / lava lamp, bunk bed / lofted bed).
 
-split - answers that do not mean the same thing as the rest of their own group (for example "grappling hook" grouped with "gun"), copied exactly. When unsure, leave the group as it is.
+split - answers that do not mean the same thing as the rest of their own group, copied exactly: a different thing ("grappling hook" grouped with "gun"), or a broad term grouped with a kind of it ("alcohol" grouped with "beer"). When unsure, leave the group as it is.
 
 If you're asked to judge only some of the groups, give entries and splits for those groups only, but compare against all the answers for same_as.`;
 

@@ -771,21 +771,46 @@
     const seatOf = (g) => Math.min(...g.entries.map((e) => e.seat || 99));
     const byStatus = (st) => s.groups.filter((g) => g.status === st);
     const unique = byStatus('unique').sort((a, b) => seatOf(a) - seatOf(b) || a.entries[0].text.localeCompare(b.entries[0].text));
+    // A table that wrote the same thing twice ("couch" and "sofa") scores it once: the first answer is
+    // the unique one; the others are repeats, shown separately with no points.
+    const repeats = [];
+    const uniqueItems = unique.map((g) => {
+      const counted = g.entries.find((e) => !e.rejected) || g.entries[0];
+      for (const e of g.entries) {
+        if (e === counted || e.rejected) continue;
+        repeats.push(
+          el(
+            'span',
+            { className: 'rv-item repeat' },
+            chip(g, e),
+            el('span', { className: 'rv-note' }, `same as ${counted.text}`),
+            e.ai || g.ai ? el('span', { className: 'rv-tag', title: 'Changed in review' }, 'reviewed') : null
+          )
+        );
+      }
+      return el(
+        'span',
+        { className: 'rv-item unique' },
+        chip(g, counted),
+        g.ai ? el('span', { className: 'rv-tag', title: 'Changed in review' }, 'reviewed') : null
+      );
+    });
     const shared = byStatus('shared').sort((a, b) => b.entries.length - a.entries.length || a.entries[0].text.localeCompare(b.entries[0].text));
     const rejected = byStatus('rejected');
-    const section = (cls, title, groups) =>
-      groups.length
+    const section = (cls, title, items) =>
+      items.length
         ? el(
             'section',
             { className: `rv-sec ${cls}` },
-            el('h3', {}, title, el('span', { className: 'rv-count' }, String(groups.length))),
-            el('div', { className: 'rv-flow' }, ...groups.map(item))
+            el('h3', {}, title, el('span', { className: 'rv-count' }, String(items.length))),
+            el('div', { className: 'rv-flow' }, ...items)
           )
         : null;
     const board = [
-      section('unique', `Unique · +${s.groups.find((g) => g.status === 'unique')?.points ?? 100} each`, unique),
-      section('shared', 'Shared · no points', shared),
-      section('rejected', 'Rejected', rejected),
+      section('unique', `Unique · +${s.groups.find((g) => g.status === 'unique')?.points ?? 100} each`, uniqueItems),
+      section('shared', 'Shared · no points', shared.map(item)),
+      section('repeats', 'Repeats · no points', repeats),
+      section('rejected', 'Rejected', rejected.map(item)),
     ].filter(Boolean);
     $('#rv-groups').replaceChildren(...(board.length ? board : [el('p', { className: 'muted rv-empty' }, 'Nobody wrote anything this round.')]));
 
