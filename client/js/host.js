@@ -685,7 +685,12 @@
             renderReview(current);
           },
         },
-        el('span', { className: 'rv-badge' }, g.status === 'unique' ? `+${g.points}` : g.status === 'shared' ? 'Shared' : 'Rejected'),
+        el(
+          'span',
+          { className: 'rv-badge' },
+          g.status === 'unique' ? `+${g.points}` : g.status === 'shared' ? 'Shared' : 'Rejected',
+          g.ai ? el('span', { className: 'ai-tag', title: g.ai === 'merged' ? 'Claude merged these' : 'Claude split this out' }, g.ai === 'merged' ? 'Claude merged' : 'Claude split') : null
+        ),
         el(
           'div',
           { className: 'rv-entries' },
@@ -694,6 +699,7 @@
               'span',
               { className: 'rv-entry' + (e.rejected ? ' rejected' : '') },
               el('span', { className: `seat-no s-${seatColor(e.seat)}`, title: e.name }, e.seat || '?'),
+              e.ai && e.rejected ? el('span', { className: 'ai-tag', title: "Claude: doesn't fit the category" }, 'Claude') : null,
               el(
                 'button',
                 {
@@ -733,6 +739,17 @@
       ? 'Now tap the group it matches to merge them (or tap it again to cancel).'
       : 'Tap an answer to pull it out of a group. Tap a group, then another, to merge them. ✕ rejects an answer.';
     $('#rv-next').textContent = s.isLast ? 'Score it · final results' : 'Score it';
+    // What Claude did (when the server has an API key and the host left "Claude check" on).
+    const ai = s.ai;
+    const aiLine = $('#rv-ai');
+    aiLine.hidden = !ai;
+    aiLine.className = `rv-ai ${ai?.status || ''}`;
+    if (ai?.status === 'checking') aiLine.textContent = 'Claude is double-checking the answers…';
+    else if (ai?.status === 'done') {
+      const did = [ai.rejected && `rejected ${ai.rejected}`, ai.merged && `merged ${ai.merged}`, ai.split && `split ${ai.split}`].filter(Boolean);
+      aiLine.textContent = did.length ? `Claude checked: ${did.join(' · ')}. Tap anything to change it.` : 'Claude checked: no changes needed.';
+    } else if (ai?.status === 'skipped') aiLine.textContent = 'You changed the groups first, so Claude’s suggestions were left out.';
+    else if (ai?.status === 'error') aiLine.textContent = `Claude couldn’t check this round (${ai.message}).`;
     showScreen('screen-review');
   }
 

@@ -11,6 +11,7 @@ const QRCode = require('qrcode');
 const config = require('./config');
 const { listGames, buildRound } = require('./games');
 const matcher = require('./matcher');
+const aicheck = require('./aicheck');
 const sources = require('./sources');
 const { Game } = require('./game');
 
@@ -190,6 +191,7 @@ io.on('connection', (socket) => {
         kind: def.kind,
         gameName: def.name,
         wagerTime: chosen.wagerTime,
+        aiCheck: !!chosen.aiCheck,
         joinUrl,
         qr,
         maxPlayers: config.MAX_PLAYERS,
@@ -220,7 +222,7 @@ io.on('connection', (socket) => {
       if (game.state !== 'lobby') throw new Error('Finish this game first.');
       const { game: def, round: set, settings: chosen } = await buildRound({ game: gameId, packs, customSet, customPrompts, settings });
       if (game.disposed) throw new Error('That game is no longer running.');
-      game.loadRound({ set, kind: def.kind, gameName: def.name, wagerTime: chosen.wagerTime });
+      game.loadRound({ set, kind: def.kind, gameName: def.name, wagerTime: chosen.wagerTime, aiCheck: !!chosen.aiCheck });
     })
   );
   socket.on('host:cancel-setup', handler(async () => hostGame().cancelChoosing()));
@@ -327,6 +329,11 @@ server.listen(config.PORT, config.HOST, () => {
   }
   sources.warmUp(); // load the saved question bank and top it up in the background
   matcher.loadModel(); // Only One's answer-matching model, so the first round doesn't wait for it
+  console.log(
+    aicheck.enabled()
+      ? `  Claude check: on for Only One (${config.AI_CHECK_MODEL})`
+      : '  Claude check: off (set ANTHROPIC_API_KEY to turn it on for Only One)'
+  );
   const bank = sources.bankStatus();
   console.log(`  Question bank: ${bank.ready} questions ready${bank.filling ? ', filling up in the background' : ''}`);
   console.log('');

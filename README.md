@@ -23,6 +23,15 @@ Each round, the big screen shows a category, like "Things in a dorm room". Every
 - 230 categories ship in six packs (`server/onlyone/`), and the host can type their own on the setup page.
 - If the AI model can't be installed or loaded, Only One still works: matching falls back to the text rules, and the host merges the rest.
 
+#### Claude check (optional)
+
+With an Anthropic API key, Claude double-checks every round in the background, a few seconds after the review screen appears. It rejects answers that don't fit the category ("banana" for "Things a superhero needs"), merges answers the local model missed ("Doritos" = "chips"), and splits ones it grouped wrongly. Its changes are tagged "Claude" on the review screen, and the host can undo any of them. If the host changes something first, Claude's suggestions are left out.
+
+- **Cost:** about $0.0003 per round with Claude Haiku 5.5, so roughly 3,000 rounds per dollar for a 12-table room. The server log prints the tokens and cost of every check.
+- **Turn it on:** get a key at https://console.anthropic.com, then run `sudo bash server/setup.sh --anthropic-key sk-ant-...`, or add `ANTHROPIC_API_KEY=sk-ant-...` to `/etc/roundtable.env` and run `sudo systemctl restart roundtable`. Hosts get a "Claude check: On / Off" setting on the Only One setup page.
+- **Privacy:** each round's category and answers are sent to Anthropic. Leave the key unset to keep everything on your server.
+- `AI_CHECK_MODEL` changes the model (default `claude-haiku-5-5`).
+
 ```
 Roundtable/
 ├── client/              ← the website (plain HTML/CSS/JS, no build step)

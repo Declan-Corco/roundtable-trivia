@@ -34,6 +34,10 @@ module.exports = {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean),
+  // Only One: Claude double-checks each round's answers when this key is set (optional).
+  // Get one at https://console.anthropic.com. Answers are sent to Anthropic; ~$0.0003 per round.
+  ANTHROPIC_API_KEY: (process.env.ANTHROPIC_API_KEY || '').trim(),
+  AI_CHECK_MODEL: process.env.AI_CHECK_MODEL || 'claude-haiku-5-5',
   MAX_PLAYERS: int('MAX_PLAYERS', 200),
   MAX_GAMES: int('MAX_GAMES', 50),
 };

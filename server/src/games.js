@@ -14,6 +14,7 @@ const path = require('path');
 const config = require('./config');
 const { loadSets, validateSet } = require('./trivia');
 const sources = require('./sources');
+const aicheck = require('./aicheck');
 
 const DEFAULT_ONLINE_COUNT = 20; // when a host picks "All" with online categories
 const MAX_ROUND = 50;
@@ -94,6 +95,21 @@ const ONLY_ONE = {
       options: [45, 60, 90, 120].map((s) => ({ value: s, label: `${s}s` })),
       default: 60,
     },
+    // Only offered when the server has an Anthropic API key (see aicheck.js).
+    ...(aicheck.enabled()
+      ? [
+          {
+            id: 'aiCheck',
+            label: 'Claude check',
+            hint: 'Claude rejects answers that don\'t fit and fixes the grouping. About $0.0003 a round.',
+            options: [
+              { value: true, label: 'On' },
+              { value: false, label: 'Off' },
+            ],
+            default: true,
+          },
+        ]
+      : []),
   ],
 };
 

@@ -117,7 +117,7 @@ async function group(entries, category) {
   );
   const dim = out.dims[out.dims.length - 1];
   const vectors = groups.map((_, i) => Array.from(out.data.subarray(i * dim, (i + 1) * dim)));
-  let clusters = groups.map((g, i) => ({ ids: [...g.ids], vec: vectors[i], weight: 1 }));
+  let clusters = groups.map((g, i) => ({ ids: [...g.ids], vecs: [vectors[i]] }));
   const cosine = (a, b) => {
     let dot = 0;
     let na = 0;
@@ -129,21 +129,26 @@ async function group(entries, category) {
     }
     return dot / Math.sqrt(na * nb);
   };
+  // Two groups only merge if EVERY answer in one is close to EVERY answer in the other. (Comparing
+  // averages let groups chain: "grapple gun" ~ "gun" ~ "laser gun" all ended up as one answer.)
+  const closeness = (a, b) => {
+    let worst = 1;
+    for (const x of a.vecs) for (const y of b.vecs) worst = Math.min(worst, cosine(x, y));
+    return worst;
+  };
   for (;;) {
     let best = null;
     for (let i = 0; i < clusters.length; i++) {
       for (let j = i + 1; j < clusters.length; j++) {
-        const s = cosine(clusters[i].vec, clusters[j].vec);
+        const s = closeness(clusters[i], clusters[j]);
         if (s >= SAME_MEANING && (!best || s > best.s)) best = { i, j, s };
       }
     }
     if (!best) break;
     const a = clusters[best.i];
     const b = clusters[best.j];
-    // The merged group sits at the (weighted) middle of the two.
-    const vec = a.vec.map((x, k) => (x * a.weight + b.vec[k] * b.weight) / (a.weight + b.weight));
     clusters = clusters.filter((_, k) => k !== best.i && k !== best.j);
-    clusters.push({ ids: [...a.ids, ...b.ids], vec, weight: a.weight + b.weight });
+    clusters.push({ ids: [...a.ids, ...b.ids], vecs: [...a.vecs, ...b.vecs] });
   }
   return clusters.map((c) => c.ids);
 }

@@ -13,6 +13,7 @@
 // lobby (same PIN) while the host picks the next game. Players can join at any point.
 const crypto = require('crypto');
 const matcher = require('./matcher');
+const aicheck = require('./aicheck');
 
 const INTRO_MS = 4000; // "Get ready" screen before answers open
 const HOST_GRACE_MS = 2 * 60 * 1000; // host can refresh/reconnect within this window
@@ -35,7 +36,7 @@ const newToken = () => crypto.randomBytes(18).toString('base64url');
 const multiplier = (q) => (q.points === 'double' ? 2 : q.points === 'none' ? 0 : 1);
 
 class Game {
-  constructor({ io, pin, set, kind = 'wager', gameName = 'Wager Wars', wagerTime = 15, joinUrl, qr, maxPlayers, onDispose }) {
+  constructor({ io, pin, set, kind = 'wager', gameName = 'Wager Wars', wagerTime = 15, aiCheck = false, joinUrl, qr, maxPlayers, onDispose }) {
     this.io = io;
     this.pin = pin;
     this.set = set;
@@ -45,7 +46,10 @@ class Game {
     this.lastReveal = null; // what the host screen shows after a question
     this.choosing = false; // in the lobby while the host picks the next game (set may be null)
     this.entries = new Map(); // Only One: this round's answers by id { id, text, playerId, rejected }
-    this.groups = null; // Only One: answers that count as the same [{ id, ids: [entry ids] }]
+    this.groups = null; // Only One: answers that count as the same [{ id, ids: [entry ids], ai? }]
+    this.aiCheck = aiCheck; // Only One: Claude double-checks each round (aicheck.js)
+    this.ai = null; // Only One: Claude's check of this round { status, ... }
+    this.editVersion = 0; // Only One: bumped on every host edit, so a late Claude result doesn't undo them
     this.seq = 0; // ids for answers and groups
     this.joinUrl = joinUrl;
     this.qr = qr;
@@ -335,10 +339,11 @@ class Game {
   }
 
   /** The host picked the next game: load its questions and wait in the lobby for "Start". */
-  loadRound({ set, kind = 'wager', gameName, wagerTime }) {
+  loadRound({ set, kind = 'wager', gameName, wagerTime, aiCheck = false }) {
     if (this.state !== 'lobby') throw new Error('Finish this game first.');
     this.set = set;
     this.kind = kind;
+    this.aiCheck = aiCheck;
     this.gameName = gameName;
     this.wagerTime = wagerTime;
     this.choosing = false;
@@ -394,6 +399,7 @@ class Game {
     }
     this.groups = null;
     this.entries = new Map();
+    this.ai = null;
     if (this.kind === 'wager') this.openWagers();
     else this.startIntro();
   }
@@ -570,7 +576,69 @@ class Game {
     }
     if (this.disposed || this.state !== 'grouping') return;
     this.groups = grouped.map((ids) => ({ id: `g${++this.seq}`, ids }));
+    this.ai = this.aiCheck && aicheck.enabled() && entries.length ? { status: 'checking' } : null;
     this.state = 'review';
+    this.touch();
+    this.broadcastState();
+    if (this.ai) this.runAiCheck();
+  }
+
+  /** Claude checks the round in the background and its changes are applied to the review. */
+  async runAiCheck() {
+    const round = this.qIndex;
+    const version = this.editVersion;
+    const groups = this.groups
+      .map((g) => ({ id: g.id, entries: g.ids.map((id) => this.entries.get(id)).filter((e) => e && !e.rejected).map((e) => ({ id: e.id, text: e.text })) }))
+      .filter((g) => g.entries.length);
+    let result;
+    try {
+      result = await aicheck.check(this.question.question, groups);
+    } catch (err) {
+      if (this.disposed || this.state !== 'review' || this.qIndex !== round) return;
+      console.warn(`[game ${this.pin}] Claude check failed: ${err.message}`);
+      this.ai = { status: 'error', message: err.message };
+      this.broadcastState();
+      return;
+    }
+    if (this.disposed || this.state !== 'review' || this.qIndex !== round) return; // the host already scored it
+    const u = result.usage || {};
+    console.log(
+      `[game ${this.pin}] Claude check: ${u.input_tokens ?? '?'} in / ${u.output_tokens ?? '?'} out tokens, ` +
+        `~$${aicheck.costOf(u).toFixed(5)}, ${(result.ms / 1000).toFixed(1)} s`
+    );
+    if (this.editVersion !== version) {
+      // The host changed things while Claude was checking: their call wins.
+      this.ai = { status: 'skipped' };
+      this.broadcastState();
+      return;
+    }
+    let split = 0;
+    for (const id of result.split) {
+      const g = this.groups.find((x) => x.ids.includes(id));
+      if (!g || g.ids.length < 2) continue;
+      g.ids = g.ids.filter((x) => x !== id);
+      this.groups.splice(this.groups.indexOf(g) + 1, 0, { id: `g${++this.seq}`, ids: [id], ai: 'split' });
+      split++;
+    }
+    let merged = 0;
+    for (const set of result.merge) {
+      const parts = set.map((gid) => this.groups.find((g) => g.id === gid)).filter(Boolean);
+      if (parts.length < 2) continue;
+      const [into, ...rest] = parts;
+      for (const g of rest) into.ids.push(...g.ids);
+      into.ai = 'merged';
+      this.groups = this.groups.filter((g) => !rest.includes(g));
+      merged++;
+    }
+    let rejected = 0;
+    for (const id of result.misfits) {
+      const e = this.entries.get(id);
+      if (!e || e.rejected) continue;
+      e.rejected = true;
+      e.ai = true;
+      rejected++;
+    }
+    this.ai = { status: 'done', rejected, merged, split };
     this.touch();
     this.broadcastState();
   }
@@ -589,6 +657,7 @@ class Game {
    */
   editGroups({ action, group, into, entry } = {}) {
     if (this.kind !== 'onlyone' || this.state !== 'review') throw new Error('Nothing to check right now.');
+    this.editVersion++;
     const find = (gid) => this.groups.find((g) => g.id === String(gid));
     if (action === 'merge') {
       const from = find(group);
@@ -605,6 +674,7 @@ class Game {
       const e = this.entries.get(String(entry));
       if (!e) throw new Error('That answer is gone.');
       e.rejected = !e.rejected;
+      e.ai = false; // the host's call now
     } else {
       throw new Error('Unknown change.');
     }
@@ -834,11 +904,12 @@ class Game {
           return {
             id: g.id,
             status,
+            ai: g.ai || null, // 'merged' / 'split' when Claude changed this group
             points: status === 'unique' ? UNIQUE_POINTS : 0,
             entries: g.ids.map((id) => {
               const e = this.entries.get(id);
               const p = this.players.get(e.playerId);
-              return { id, text: e.text, rejected: e.rejected, seat: p?.seat ?? 0, name: p?.name ?? 'Left the game' };
+              return { id, text: e.text, rejected: e.rejected, ai: !!e.ai, seat: p?.seat ?? 0, name: p?.name ?? 'Left the game' };
             }),
           };
         });
@@ -848,6 +919,7 @@ class Game {
           question: q.question,
           category: q.category || null,
           groups,
+          ai: this.ai,
           isLast: this.isLastQuestion,
           playerCount: this.players.size,
         };

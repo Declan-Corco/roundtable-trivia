@@ -858,6 +858,12 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .rv-x { width: 24px; height: 24px; border: 0; border-radius: 50%; background: var(--cream); color: var(--ink-soft); font-weight: 700; cursor: pointer; }
 .rv-x:hover { background: var(--red); color: var(--white); }
 .rv-empty { grid-column: 1 / -1; text-align: center; font-size: 1.2rem; }
+/* What Claude did to the groups */
+.rv-ai { margin: 2px auto 0; padding: 6px 14px; border-radius: 999px; background: var(--white); box-shadow: var(--shadow-card); font-weight: 600; color: var(--ink-soft); width: fit-content; }
+.rv-ai.checking::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: var(--teal); animation: pulse 1s ease-in-out infinite; }
+.rv-ai.error, .rv-ai.skipped { color: var(--muted); }
+.ai-tag { margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: #e9e1f7; color: #5b3d99; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: none; }
+.rv-entry .ai-tag { margin-left: 0; }
 .review-screen .q-foot { align-self: stretch; }
 
 /* Setup on a narrower screen: settings go under the categories */

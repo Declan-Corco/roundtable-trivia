@@ -7,6 +7,7 @@
 #     sudo bash server/setup.sh --domain trivia.example.com
 #     sudo bash server/setup.sh --lan                   # no domain, local network only
 #     sudo bash server/setup.sh --public-url https://trivia.example.com   # behind Cloudflare Tunnel etc.
+#     sudo bash server/setup.sh --anthropic-key sk-ant-...   # turn on Claude check for Only One
 #     sudo bash server/setup.sh --uninstall
 #
 #  What it does:
@@ -32,6 +33,7 @@ DOMAIN=""
 EMAIL=""
 PUBLIC_URL_ARG=""
 PORT_ARG=""
+ANTHROPIC_KEY_ARG=""
 MODE=""          # domain | lan | public-url (empty = ask)
 UNINSTALL=0
 
@@ -50,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --public-url)  PUBLIC_URL_ARG="${2:-}"; MODE="public-url"; shift 2 ;;
     --lan)         MODE="lan"; shift ;;
     --port)        PORT_ARG="${2:-}"; shift 2 ;;
+    --anthropic-key) ANTHROPIC_KEY_ARG="${2:-}"; shift 2 ;;
     --uninstall)   UNINSTALL=1; shift ;;
     -h|--help)     usage ;;
     *) die "Unknown option: $1 (try --help)" ;;
@@ -217,6 +220,9 @@ MAX_PLAYERS=200
 # iOS app (optional): lets the Camera open join QR codes straight in the app.
 # Set to YOURTEAMID.site.round-table.app once the app is signed with a paid Apple Developer account.
 APPLE_APP_ID=
+# Only One (optional): Claude double-checks each round's answers when this is set.
+# Get a key at https://console.anthropic.com. About $0.0003 per round; answers are sent to Anthropic.
+ANTHROPIC_API_KEY=
 EOF
   chmod 640 "$ENV_FILE"
   chgrp "$APP" "$ENV_FILE"
@@ -226,6 +232,7 @@ set_env() { # set_env KEY VALUE
   if grep -qE "^$1=" "$ENV_FILE"; then sed -i "s#^$1=.*#$1=$2#" "$ENV_FILE"; else echo "$1=$2" >> "$ENV_FILE"; fi
 }
 [[ -n "$PORT_ARG" ]] && set_env PORT "$PORT_ARG"
+[[ -n "$ANTHROPIC_KEY_ARG" ]] && set_env ANTHROPIC_API_KEY "$ANTHROPIC_KEY_ARG"
 case "$MODE" in
   domain)     set_env PUBLIC_URL "https://$DOMAIN" ;;
   public-url) set_env PUBLIC_URL "$PUBLIC_URL_ARG" ;;
@@ -337,6 +344,8 @@ echo
 echo "  Trivia sets:   ${INSTALL_DIR}/server/trivia/    (drop .json files here)"
 echo "  Only One packs: ${INSTALL_DIR}/server/onlyone/"
 echo "  Settings:      ${ENV_FILE}"
+if grep -qE '^ANTHROPIC_API_KEY=.+' "$ENV_FILE"; then echo "  Claude check:  on for Only One"
+else echo "  Claude check:  off (add --anthropic-key sk-ant-... to turn it on)"; fi
 echo "  View logs:     sudo journalctl -u ${APP} -f"
 echo "  Restart:       sudo systemctl restart ${APP}"
 echo "  Update:        re-run this script after changing the project files"
