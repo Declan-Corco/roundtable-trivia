@@ -19,6 +19,7 @@ Each round, the big screen shows a category, like "Things in a dorm room". Every
 - **The server decides which answers count as the same**, in a few dozen milliseconds:
   - **Text rules** handle spelling: "Mini fridge" = "minifridge", "Microwaves" = "microwve".
   - **A small AI model running on the server** handles meaning: "Keurig" = "coffee maker", "TV" = "television", "couch" = "sofa". The model is [bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5), about 34 MB, and runs on the CPU with no API key and no cost per game. It downloads once, the first time the server starts, to `server/data/models/`, and works offline after that.
+- **Junk is screened out on the server** (`server/src/screen.js`, simple text rules): keyboard mashing ("asdfgh"), filler ("idk", "no idea"), code (`print("hello")`, `<script>`), answers in another alphabet ("холодильник") and phrases in another language ("el perro que ladra") are rejected before the Claude check, so they aren't sent to Anthropic. It's cautious: single foreign words and borrowed phrases ("Cinco de Mayo") pass, and some rules switch off when the category is about words, sounds or languages. The host can allow any of them.
 - **The host has the final say.** Before scoring, the TV shows the groups. Tap an answer to pull it out of a group, tap two groups to merge them, or ✕ an answer that doesn't fit the category.
 - 230 categories ship in six packs (`server/onlyone/`), and the host can type their own on the setup page.
 - If the AI model can't be installed or loaded, Only One still works: matching falls back to the text rules, and the host merges the rest.
@@ -44,7 +45,7 @@ Roundtable/
 │   └── js/              ← common.js, host.js, player.js
 └── server/              ← the backend (Node.js + Socket.IO), also serves the website
     ├── src/             ← index.js (web server), games.js (the games, categories + settings),
-    │                       game.js (game engine), matcher.js (Only One answer matching),
+    │                       game.js (game engine), matcher.js (Only One answer matching), screen.js (junk filter),
     │                       sources.js (Open Trivia DB question bank), trivia.js (question file loader)
     ├── trivia/          ← your own Wager Wars questions: one .json file each
     ├── onlyone/         ← Only One category packs: one .json file each

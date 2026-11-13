@@ -751,7 +751,7 @@
         {
           type: 'button',
           className: 'rv-chip' + (e.id === selected ? ' sel' : '') + (e.rejected ? ' rej' : ''),
-          title: `${e.name}${e.ai ? ' · changed in review' : ''}`,
+          title: `${e.name}${e.ai ? ` · ${e.why ? `rejected in review: ${e.why}` : 'changed in review'}` : ''}`,
           onclick: () => tap(g, e),
         },
         el('span', { className: `seat-no s-${seatColor(e.seat)}` }, e.seat || '?'),

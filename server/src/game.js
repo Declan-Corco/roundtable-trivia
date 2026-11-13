@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const config = require('./config');
 const matcher = require('./matcher');
 const aicheck = require('./aicheck');
+const { screen } = require('./screen');
 
 const INTRO_MS = 4000; // "Get ready" screen before answers open
 const HOST_GRACE_MS = 2 * 60 * 1000; // host can refresh/reconnect within this window
@@ -589,7 +590,8 @@ class Game {
 
   /**
    * Grading, while the host sees a spinning logo: group this round's answers (rules + the local
-   * model, see matcher.js), then (with an API key) let Claude check them (aicheck.js). The results
+   * model, see matcher.js), reject nonsense and other languages locally (screen.js), then (with an
+   * API key) let Claude check the rest (aicheck.js). The results
    * appear once both are done; the host can still change anything before scoring.
    */
   async review() {
@@ -616,12 +618,18 @@ class Game {
     }
     if (!stillGrading()) return;
     this.groups = grouped.map((ids) => ({ id: `g${++this.seq}`, ids }));
+    const screened = this.screenAnswers();
 
-    if (aicheck.enabled() && entries.length) {
+    if (aicheck.enabled() && entries.some((e) => !e.rejected)) {
       this.gradingStep = 'checking';
       this.broadcastState();
       await this.runAiCheck();
       if (!stillGrading()) return;
+    }
+
+    if (screened) {
+      if (!this.ai) this.ai = { status: 'done', rejected: 0, merged: 0, split: 0 }; // no Claude check, or nothing left for it
+      if (this.ai.status === 'done') this.ai.rejected += screened;
     }
 
     const wait = GRADING_MIN_MS - (Date.now() - started);
@@ -632,6 +640,25 @@ class Game {
     this.scheduleAuto();
     this.touch();
     this.broadcastState();
+  }
+
+  /**
+   * Rejects answers that can't be right (keyboard mashing, "idk", another language; see screen.js)
+   * before Claude sees the round, so they aren't sent. Returns how many were rejected.
+   */
+  screenAnswers() {
+    const caught = {};
+    for (const e of this.entries.values()) {
+      const why = screen(e.text, this.question.question);
+      if (!why) continue;
+      e.rejected = true;
+      e.ai = true; // shown as "reviewed"; the host can still allow it
+      e.aiWhy = why;
+      (caught[why] ||= []).push(e.text);
+    }
+    const n = Object.values(caught).flat().length;
+    if (n) console.log(`[game ${this.pin}] screened out ${n} answer${n === 1 ? '' : 's'}: ` + Object.entries(caught).map(([why, t]) => `${why} (${t.join(', ')})`).join('; '));
+    return n;
   }
 
   /** Claude checks the round (gives up after AI_CHECK_WAIT_MS) and its changes are applied to the groups. */
