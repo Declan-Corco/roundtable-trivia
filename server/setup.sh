@@ -162,7 +162,7 @@ NODE_BIN="$(command -v node)"
 # ----------------------------------------------------------------------------- app files
 step "Installing the app to ${INSTALL_DIR}"
 id -u "$APP" &>/dev/null || useradd --system --user-group --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin "$APP"
-PACK_DIRS=(trivia onlyone) # question and category packs (see the README in each folder)
+PACK_DIRS=(trivia onlyone split) # question and category packs (see the README in each folder)
 for d in "${PACK_DIRS[@]}"; do mkdir -p "$INSTALL_DIR/server/$d"; done
 
 if [[ "$(realpath "$SRC_ROOT")" != "$(realpath "$INSTALL_DIR")" ]]; then
@@ -344,6 +344,7 @@ echo "${c_green}${c_bold}=====================================================${
 echo
 echo "  Trivia sets:   ${INSTALL_DIR}/server/trivia/    (drop .json files here)"
 echo "  Only One packs: ${INSTALL_DIR}/server/onlyone/"
+echo "  Split Decision: ${INSTALL_DIR}/server/split/"
 echo "  Settings:      ${ENV_FILE}"
 if grep -qE '^ANTHROPIC_API_KEY=.+' "$ENV_FILE"; then echo "  Claude check:  on for Only One"
 else echo "  Claude check:  off (add --anthropic-key sk-ant-... to turn it on)"; fi

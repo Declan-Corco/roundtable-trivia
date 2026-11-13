@@ -892,6 +892,96 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .rv-sel { font-weight: 600; color: var(--brown-900); }
 .review-screen .q-foot { align-self: stretch; }
 
+/* Split Decision: a bar split between the two answers (the reveal on the big screen, the guess on the phone).
+   --a is the first answer's share; the second answer takes the rest. */
+.sd-bar {
+  --a: 50%;
+  display: flex;
+  width: 100%;
+  height: 56px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  color: var(--tile-ink);
+  font-weight: 650;
+}
+.sd-bar > div { --pad: 16px; display: flex; align-items: center; gap: 10px; min-width: 0; white-space: nowrap; overflow: hidden; }
+/* Spacing on the labels, not the halves, so a half can shrink all the way to 0% */
+.sd-a > :first-child { margin-left: var(--pad); }
+.sd-b > :last-child { margin-right: var(--pad); }
+.sd-a { width: var(--a); flex: none; background: var(--a0); transition: width 1.3s cubic-bezier(.2, .8, .2, 1); }
+.sd-b { flex: 1; justify-content: flex-end; background: var(--a1); }
+.sd-bar .sd-name { overflow: hidden; text-overflow: ellipsis; }
+.sd-bar.empty .sd-a, .sd-bar.empty .sd-b { background: var(--cream-deep); color: var(--ink-soft); }
+#g-bar .sd-a { transition: width 0.12s; }
+
+/* Game card art: a split bar with a guess pinned on it */
+.art-split { display: grid; place-items: center; }
+.sd-art-bar { display: flex; width: 62px; height: 22px; border-radius: 8px; overflow: hidden; margin-top: 18px; box-shadow: 0 3px 0 rgba(74, 44, 29, 0.25); }
+.sd-art-bar span:first-child { width: 62%; background: var(--red); }
+.sd-art-bar span:last-child { flex: 1; background: var(--teal); }
+.sd-art-pin { position: absolute; top: 18px; left: 50px; width: 20px; height: 20px; border-radius: 50%; background: var(--yellow); box-shadow: 0 2px 0 var(--a2-edge); }
+.sd-art-pin::after { content: ""; position: absolute; left: 9px; top: 18px; width: 2px; height: 10px; background: var(--brown-900); }
+
+/* The reveal on the big screen */
+.host .split-screen { justify-content: flex-start; align-items: stretch; gap: 14px; padding: 16px 20px; }
+.sd-stage { flex: 1; width: min(1100px, 100%); align-self: center; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+.sd-bar.big { height: clamp(72px, 12vh, 120px); font-size: clamp(1.1rem, 2.2vw, 1.8rem); border-radius: 22px; }
+.sd-bar.big > div { --pad: clamp(14px, 2vw, 28px); }
+.sd-bar.big .sd-pct { font-size: 1.5em; font-variant-numeric: tabular-nums; }
+.sd-counts { display: flex; justify-content: space-between; gap: 12px; color: var(--ink-soft); font-weight: 600; }
+/* Every table's guess: a pin in their seat colour, stacked in rows when guesses are close together */
+.sd-pins { --rows: 1; position: relative; height: calc(var(--rows) * 44px + 18px); }
+.sd-pin {
+  --row: 0;
+  position: absolute;
+  bottom: calc(var(--row) * 44px + 14px);
+  width: 36px;
+  height: 36px;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--tile-ink);
+  font-weight: 650;
+  box-shadow: 0 3px 0 rgba(74, 44, 29, 0.25);
+  animation: pin-drop 0.45s ease both;
+}
+.sd-pin::after { /* the stem down to the bar */
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 2px;
+  height: calc(var(--row) * 44px + 14px);
+  margin-left: -1px;
+  background: var(--brown-900);
+  opacity: 0.45;
+}
+.sd-pin.best { outline: 3px solid var(--brown-900); outline-offset: 2px; z-index: 1; }
+@keyframes pin-drop { from { opacity: 0; transform: translate(-50%, -24px); } }
+.sd-board { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.sd-board li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px 10px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  box-shadow: var(--shadow-card);
+  font-weight: 600;
+  text-align: left;
+  animation: fade-in 0.4s ease both;
+}
+.sd-board li.best { box-shadow: 0 0 0 3px var(--yellow), var(--shadow-card); }
+.sd-board .seat-no { font-size: 1rem; }
+.sd-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 1.15rem; }
+.sd-guess { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+.sd-off { color: var(--ink-soft); font-size: 0.95rem; }
+.sd-pts { color: var(--teal-ink); font-weight: 650; font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
+.split-screen .q-foot { align-self: stretch; }
+
 /* Setup on a narrower screen: settings go under the categories */
 @media (max-width: 980px) {
   .setup-body { grid-template-columns: 1fr; }
@@ -1043,6 +1133,13 @@ code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-siz
 .quick-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; width: 100%; }
 .quick { border: 0; border-radius: 999px; padding: 10px 4px; background: var(--cream); color: var(--brown-900); font-weight: 600; cursor: pointer; box-shadow: 0 3px 0 var(--cream-deep); }
 .quick.on { background: var(--brown-900); color: var(--paper); box-shadow: 0 3px 0 #2c190f; }
+/* Split Decision on the phone: guess the split */
+.g-question { margin: 0; font-size: clamp(1.25rem, 5.5vw, 1.7rem); font-weight: 650; line-height: 1.2; overflow-wrap: anywhere; }
+.g-ask { margin: 0; color: var(--ink-soft); font-weight: 500; font-size: 1.05rem; }
+.g-ask strong { color: var(--brown-900); }
+#screen-guess .sd-bar { font-size: 1rem; }
+#screen-guess .range { margin: 4px 0; }
+
 /* Result */
 .result-detail { margin: 0; max-width: 420px; font-weight: 600; font-size: 1.1rem; }
 .result-detail:empty { display: none; }

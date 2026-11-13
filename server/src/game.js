@@ -8,6 +8,9 @@
 //                            it can → the server groups answers that mean the same thing (matcher.js) →
 //                            the host checks the groups (merge / split / reject) → answers only one table
 //                            wrote score 100 each → standings.
+//   Split Decision ('split') — each round: get ready (the question) → everyone secretly picks one of two
+//                            answers → every table guesses what percent of the room picked the first →
+//                            reveal (the real split; points for how close each guess was) → standings.
 //
 // After the last question the host can play again with the same table: everyone goes back to the
 // lobby (same PIN) while the host picks the next game. Players can join at any point.
@@ -33,6 +36,16 @@ const UNIQUE_POINTS = 100; // per answer no other table wrote
 const MAX_LIST = 40; // answers per table per round
 const MAX_ANSWER_LEN = 50;
 const GRADING_MIN_MS = 1800; // the grading screen shows at least this long, so it doesn't just flash
+const REVIEW_MIN_AUTO_MS = 20 * 1000; // in auto mode, the results stay up at least this long, whatever the setting
+
+// Split Decision: a guess scores SPLIT_POINTS when spot on, falling in a straight line to 0 at
+// SPLIT_RANGE percentage points off (10 off = 80, 25 off = 50). The closest guess (ties included)
+// also gets SPLIT_BONUS.
+const SPLIT_POINTS = 100;
+const SPLIT_RANGE = 50;
+const SPLIT_BONUS = 50;
+/** Points for a guess `off` percentage points from the room's real split. */
+const splitPoints = (off) => Math.round(SPLIT_POINTS * Math.max(0, 1 - off / SPLIT_RANGE));
 
 const newToken = () => crypto.randomBytes(18).toString('base64url');
 /** What a right answer pays per point bet: double-points questions pay 2x, practice questions 0. */
@@ -43,7 +56,7 @@ class Game {
     this.io = io;
     this.pin = pin;
     this.set = set;
-    this.kind = kind; // 'wager' | 'onlyone'
+    this.kind = kind; // 'wager' | 'onlyone' | 'split'
     this.gameName = gameName;
     this.wagerTime = wagerTime; // seconds to place a bet
     this.autoAdvance = autoAdvance; // seconds before the reveal / results / standings move on by themselves (0 = manual)
@@ -90,6 +103,10 @@ class Game {
   }
   get startScore() {
     return this.kind === 'wager' ? START_BANK : 0;
+  }
+  /** What one step of the game is called on screen. */
+  get unit() {
+    return this.kind === 'wager' ? 'Question' : 'Round';
   }
   touch() {
     this.lastActivity = Date.now();
@@ -157,6 +174,7 @@ class Game {
       wager: null, // the bet on the current question
       list: [], // Only One: this round's answers [{ id, text, key }]
       done: false, // Only One: finished typing for this round
+      guess: null, // Split Decision: percent of the room this table thinks picked the first answer
       lastResult: null,
       spectator: this.state === 'finished', // joined after the last question: plays from the next game
       socketId: null,
@@ -267,9 +285,10 @@ class Game {
     return this.seated().map((p) => ({ id: p.id, name: p.name, seat: p.seat, connected: p.connected }));
   }
 
-  /** Has this player done what the current phase asks: placed a bet (wager) or answered (question)? */
+  /** Has this player done what the current phase asks: placed a bet (wager), answered (question) or guessed (guess)? */
   isIn(p) {
     if (this.state === 'wager') return p.wager != null;
+    if (this.state === 'guess') return p.guess != null;
     return this.kind === 'onlyone' ? p.done : !!p.answer;
   }
 
@@ -374,21 +393,23 @@ class Game {
     this.groups = null;
     this.entries = new Map();
     for (const p of this.players.values()) {
-      Object.assign(p, { score: this.startScore, streak: 0, correctCount: 0, lastPoints: 0, prevRank: 0, answer: null, wager: null, list: [], done: false, lastResult: null, spectator: false });
+      Object.assign(p, { score: this.startScore, streak: 0, correctCount: 0, lastPoints: 0, prevRank: 0, answer: null, wager: null, list: [], done: false, guess: null, lastResult: null, spectator: false });
     }
   }
 
   /**
    * Auto mode: the reveal, Only One's results and the standings move on by themselves after
-   * `autoAdvance` seconds. The host can still press to go sooner (or edit, which restarts it).
+   * `autoAdvance` seconds (Only One's results at least REVIEW_MIN_AUTO_MS, so the room can read
+   * them). The host can still press to go sooner (or edit, which restarts it).
    */
   scheduleAuto() {
     clearTimeout(this.autoTimer);
     this.autoAt = 0;
     if (!this.autoAdvance) return;
-    const ms = this.autoAdvance * 1000;
+    const ms = this.state === 'review' ? Math.max(this.autoAdvance * 1000, REVIEW_MIN_AUTO_MS) : this.autoAdvance * 1000;
     const state = this.state;
     const round = this.qIndex;
+    this.autoMs = ms;
     this.autoAt = Date.now() + ms;
     this.autoTimer = setTimeout(() => {
       if (!this.disposed && this.state === state && this.qIndex === round) this.next();
@@ -397,7 +418,7 @@ class Game {
 
   /** For the host screen: how long until it moves on by itself. */
   autoInfo() {
-    return this.autoAt ? { left: Math.max(0, this.autoAt - Date.now()), total: this.autoAdvance * 1000 } : null;
+    return this.autoAt ? { left: Math.max(0, this.autoAt - Date.now()), total: this.autoMs } : null;
   }
 
   next() {
@@ -416,6 +437,8 @@ class Game {
       this.startIntro(); // "Close bets" — anyone who hasn't bet is betting nothing
     } else if (this.state === 'question') {
       this.closeAnswers(); // "Skip" / "Time's up" — end the question now
+    } else if (this.state === 'guess') {
+      this.revealSplit(); // Split Decision: "Close guesses"
     }
   }
 
@@ -427,6 +450,7 @@ class Game {
       p.wager = null;
       p.list = [];
       p.done = false;
+      p.guess = null;
     }
     this.groups = null;
     this.entries = new Map();
@@ -483,9 +507,10 @@ class Game {
     this.timer = setTimeout(() => this.closeAnswers(), q.time * 1000 + 250); // small grace for latency
   }
 
-  /** Time's up (or everyone is in): score the question, or for Only One, group the answers. */
+  /** Time's up (or everyone is in): score the question; Only One groups the answers; Split Decision moves on to guessing. */
   closeAnswers() {
     if (this.kind === 'onlyone') this.review();
+    else if (this.kind === 'split') this.openGuesses();
     else this.reveal();
   }
 
@@ -510,9 +535,9 @@ class Game {
     return n;
   }
 
-  /** Moves on early once everyone has bet (wager) or answered (question). */
+  /** Moves on early once everyone has bet (wager), answered (question) or guessed (guess). */
   checkAllIn() {
-    if (this.state !== 'question' && this.state !== 'wager') return;
+    if (this.state !== 'question' && this.state !== 'wager' && this.state !== 'guess') return;
     // Players who dropped out recently (e.g. phone screen locked) still get waited for.
     const now = Date.now();
     const active = [...this.players.values()].filter(
@@ -520,6 +545,7 @@ class Game {
     );
     if (!active.length || !active.every((p) => this.isIn(p))) return;
     if (this.state === 'wager') this.startIntro();
+    else if (this.state === 'guess') this.revealSplit();
     else this.closeAnswers();
   }
 
@@ -808,6 +834,103 @@ class Game {
     this.rankResults();
   }
 
+  // ------------------------------------------------------------- Split Decision
+
+  /** Votes are in: every table now guesses what percent of the room picked the first answer. */
+  openGuesses() {
+    if (this.state !== 'question') return;
+    clearTimeout(this.timer);
+    if (!this.splitCounts().votes) return this.revealSplit(); // nobody picked a side: nothing to guess
+    const q = this.question;
+    this.state = 'guess';
+    this.phaseEndsAt = Date.now() + q.guessTime * 1000;
+    this.touch();
+    this.broadcastState();
+    this.timer = setTimeout(() => this.revealSplit(), q.guessTime * 1000 + 250);
+  }
+
+  /** How the room voted: [first answer, second answer] and the total. */
+  splitCounts() {
+    const counts = [0, 0];
+    for (const p of this.players.values()) if (p.answer) counts[p.answer.index] += 1;
+    return { counts, votes: counts[0] + counts[1] };
+  }
+
+  submitGuess(playerId, value) {
+    if (this.kind !== 'split' || this.state !== 'guess') throw new Error('Too late — guesses are closed.');
+    const player = this.playerFor(playerId);
+    if (player.guess != null) throw new Error('You already locked in your guess.');
+    const n = Math.round(Number(value));
+    if (!Number.isFinite(n)) throw new Error('Invalid guess.');
+    player.guess = Math.min(100, Math.max(0, n));
+    this.touch();
+    this.sendPlayerState(player);
+    this.sendProgress();
+    this.checkAllIn();
+  }
+
+  /** The real split: each guess scores by how close it was, and the closest table gets a bonus. */
+  revealSplit() {
+    if (this.state !== 'guess' && this.state !== 'question') return;
+    clearTimeout(this.timer);
+    const q = this.question;
+    const { counts, votes } = this.splitCounts();
+    const actual = votes ? (counts[0] / votes) * 100 : null; // percent who picked the first answer
+    const guessed = [...this.players.values()].filter((p) => p.guess != null);
+    const best = actual == null || !guessed.length ? null : Math.min(...guessed.map((p) => Math.abs(p.guess - actual)));
+
+    for (const p of this.players.values()) {
+      const voted = p.answer?.index ?? null;
+      if (actual == null || p.guess == null) {
+        p.lastPoints = 0;
+        p.streak = 0;
+        p.lastResult = { kind: 'split', answered: p.guess != null, noVotes: actual == null, correct: false, points: 0, guess: p.guess, voted, answers: q.answers, streak: 0 };
+        continue;
+      }
+      const off = Math.abs(p.guess - actual);
+      const closest = off - best < 1e-9;
+      const points = splitPoints(off) + (closest ? SPLIT_BONUS : 0);
+      p.score += points;
+      p.lastPoints = points;
+      if (closest) {
+        p.correctCount += 1; // the final screen counts closest guesses
+        p.streak += 1;
+      } else {
+        p.streak = 0;
+      }
+      p.lastResult = {
+        kind: 'split',
+        answered: true,
+        correct: closest || off <= 10,
+        closest,
+        bonus: closest ? SPLIT_BONUS : 0,
+        points,
+        guess: p.guess,
+        actual: Math.round(actual),
+        off: Math.round(off),
+        voted,
+        answers: q.answers,
+        streak: p.streak,
+      };
+    }
+    this.rankResults();
+
+    this.lastReveal = {
+      answers: q.answers,
+      counts,
+      votes,
+      actual: actual == null ? null : Math.round(actual),
+      bonus: SPLIT_BONUS,
+      guesses: (actual == null ? [] : guessed)
+        .map((p) => ({ id: p.id, name: p.name, seat: p.seat, guess: p.guess, off: Math.round(Math.abs(p.guess - actual)), points: p.lastPoints, closest: !!p.lastResult.closest }))
+        .sort((a, b) => a.off - b.off || b.points - a.points || a.seat - b.seat),
+    };
+    this.state = 'reveal';
+    this.scheduleAuto();
+    this.touch();
+    this.broadcastState();
+  }
+
   /** Right answers win their bet (twice over on a double-points question); wrong or no answer loses it. */
   reveal() {
     if (this.state !== 'question') return;
@@ -906,12 +1029,17 @@ class Game {
       joinUrl: this.joinUrl,
       title: this.set?.title || '',
       kind: this.kind,
-      unit: this.kind === 'onlyone' ? 'Round' : 'Question',
+      unit: this.unit,
       gameName: this.gameName,
       index: this.qIndex,
       total: this.total,
     };
     let payload;
+    if (this.state === 'reveal' && this.kind === 'split') {
+      // The room's real split and every table's guess (not who voted which way: votes stay private).
+      payload = { phase: 'reveal', ...common, question: q.question, isLast: this.isLastQuestion, playerCount: this.players.size, auto: this.autoInfo(), ...this.lastReveal };
+      return this.toHost('host:state', payload);
+    }
     switch (this.state) {
       case 'lobby':
         payload = {
@@ -957,6 +1085,22 @@ class Game {
           timeLeft: this.timeLeft(),
           answered: this.answeredCount(),
           answerCount: this.answerCount(),
+          playerCount: this.players.size,
+          seats: this.seatList(),
+          tableSize: this.tableSize(),
+        };
+        break;
+      case 'guess': // Split Decision: tables guess the split
+        payload = {
+          phase: 'guess',
+          ...common,
+          question: q.question,
+          answers: q.answers,
+          category: q.category || null,
+          time: q.guessTime,
+          timeLeft: this.timeLeft(),
+          votes: this.splitCounts().votes,
+          answered: this.answeredCount(),
           playerCount: this.players.size,
           seats: this.seatList(),
           tableSize: this.tableSize(),
@@ -1051,13 +1195,14 @@ class Game {
   /** The line under a final score: "7/10 correct" or "12 unique answers". */
   statText(p) {
     if (this.kind === 'onlyone') return `${p.correctCount} unique answer${p.correctCount === 1 ? '' : 's'}`;
+    if (this.kind === 'split') return `${p.correctCount} closest guess${p.correctCount === 1 ? '' : 'es'}`;
     return `${p.correctCount}/${this.total} correct`;
   }
 
   playerBase(p) {
     return {
       kind: this.kind,
-      unit: this.kind === 'onlyone' ? 'Round' : 'Question',
+      unit: this.unit,
       pin: this.pin,
       name: p.name,
       seat: p.seat,
@@ -1071,6 +1216,7 @@ class Game {
   /** What this player sent this phase, so their phone can show it (even after a refresh). */
   mine(p) {
     if (this.state === 'wager') return { kind: 'wager', wager: p.wager };
+    if (this.state === 'guess') return { kind: 'guess', guess: p.guess, answers: this.question.answers };
     if (!p.answer) return null;
     return { kind: 'answer', index: p.answer.index, text: this.question.answers[p.answer.index], wager: p.wager ?? 0 };
   }
@@ -1121,10 +1267,24 @@ class Game {
               ...base,
               answers: q.answers,
               question: q.question,
-              wager: p.wager ?? 0,
+              wager: this.kind === 'wager' ? p.wager ?? 0 : null,
               time: q.time,
               timeLeft: this.timeLeft(),
             };
+        break;
+      case 'guess':
+        payload =
+          p.guess != null
+            ? { phase: 'answered', ...base, mine: this.mine(p) }
+            : {
+                phase: 'guess',
+                ...base,
+                question: q.question,
+                answers: q.answers,
+                voted: p.answer?.index ?? null, // the side this table picked, as a reminder
+                time: q.guessTime,
+                timeLeft: this.timeLeft(),
+              };
         break;
       case 'grouping':
       case 'review':

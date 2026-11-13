@@ -281,6 +281,8 @@ io.on('connection', (socket) => {
   socket.on('player:oo-add', handler(async ({ text }) => playerGame().addListAnswer(socket.data.playerId, text)));
   socket.on('player:oo-remove', handler(async ({ id }) => playerGame().removeListAnswer(socket.data.playerId, id)));
   socket.on('player:oo-done', handler(async ({ done }) => playerGame().setListDone(socket.data.playerId, done !== false)));
+  // Split Decision: the percent of the room this table thinks picked the first answer.
+  socket.on('player:guess', handler(async ({ value }) => playerGame().submitGuess(socket.data.playerId, value)));
 
   socket.on(
     'player:wager',
@@ -324,7 +326,7 @@ server.listen(config.PORT, config.HOST, () => {
   if (config.PUBLIC_URL) console.log(`  Public URL:   ${config.PUBLIC_URL}/host`);
   for (const g of listGames()) {
     const parts = [g.online && `${g.online.categories.length} from ${g.online.name}`, `${g.packs.length} from files`];
-    console.log(`  ${(g.name + ':').padEnd(14)}${parts.filter(Boolean).join(' + ')}`);
+    console.log(`  ${(g.name + ':').padEnd(16)}${parts.filter(Boolean).join(' + ')}`);
     for (const e of g.errors) console.warn(`  ! Skipped ${e}`);
   }
   sources.warmUp(); // load the saved question bank and top it up in the background

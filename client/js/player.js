@@ -1,6 +1,7 @@
 // Player screen: join with a PIN + nickname, then use the phone as a controller:
 // Wager Wars: a bet slider before each question, then A-D answer buttons.
 // Only One: type as many answers as you can for the category on the big screen.
+// Split Decision: pick a side, then guess what percent of the room picked the first answer.
 (() => {
   const { $, el, showScreen, request, countdown, toast, watchConnection, storage, ordinal, signed } = window.RT;
   const SESSION_KEY = 'rt_player_session';
@@ -138,7 +139,8 @@
 
       case 'intro': {
         $('#intro-counter').textContent = `${s.gameName} · ${s.unit} ${s.index + 1} of ${s.total}`;
-        $('#intro-hint').textContent = s.kind === 'onlyone' ? 'Get ready to type as many as you can…' : 'Answers coming up…';
+        $('#intro-hint').textContent =
+          s.kind === 'onlyone' ? 'Get ready to type as many as you can…' : s.kind === 'split' ? 'Get ready to pick a side…' : 'Answers coming up…';
         $('#intro-category').textContent = s.category || '';
         $('#intro-question').textContent = s.question || 'Get ready!';
         $('#intro-double').hidden = s.points !== 'double';
@@ -155,6 +157,9 @@
 
       case 'answered':
         return renderAnswered(s);
+
+      case 'guess':
+        return renderGuess(s);
 
       case 'list':
         return renderList(s);
@@ -302,6 +307,47 @@
     });
   }
 
+  // ---- Split Decision: guess what percent of the room picked the first answer
+
+  function renderGuess(s) {
+    startPhase(s);
+    const [a, b] = s.answers;
+    $('#g-counter').textContent = `${s.unit} ${s.index + 1} of ${s.total}`;
+    $('#g-question').textContent = s.question;
+    $('#g-ask').replaceChildren('What percent of the room picked ', el('strong', {}, a), '?');
+    $('#g-a').textContent = a;
+    $('#g-b').textContent = b;
+    $('#g-hint').textContent = s.voted == null ? "You didn't pick a side, but you can still guess." : `You picked ${s.answers[s.voted]}.`;
+    $('#g-lock').disabled = false;
+    setGuess(50);
+    showScreen('screen-guess');
+    runTimer('g');
+  }
+
+  function setGuess(v) {
+    const n = Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+    const [a, b] = current?.answers || ['', ''];
+    $('#g-range').value = String(n);
+    $('#g-amount').textContent = `${n}%`;
+    $('#g-amount').setAttribute('aria-label', `${n}% ${a}, ${100 - n}% ${b}`);
+    $('#g-bar').style.setProperty('--a', `${n}%`);
+  }
+  $('#g-range').addEventListener('input', (e) => setGuess(e.target.value));
+  for (const btn of $('#g-quick').children) {
+    btn.addEventListener('click', () => setGuess(Number($('#g-range').value) + Number(btn.dataset.step)));
+  }
+
+  $('#g-lock').addEventListener('click', async () => {
+    const btn = $('#g-lock');
+    btn.disabled = true;
+    navigator.vibrate?.(30);
+    const res = await request(socket, 'player:guess', { value: Number($('#g-range').value) });
+    if (!res.ok) {
+      toast(res.error);
+      if (/connection|respond/i.test(res.error)) btn.disabled = false;
+    }
+  });
+
   // ---- Only One: type answers, see how they did
 
   let myList = [];
@@ -397,7 +443,9 @@
     const m = s.mine || {};
     $('#answered-title').textContent = m.kind === 'wager' ? 'Bet placed!' : 'Locked in!';
     let shape = [];
-    if (m.kind === 'wager') {
+    if (m.kind === 'guess') {
+      shape = [el('div', { className: 'num-display' }, `${m.guess}%`), el('p', { className: 'muted' }, `of the room picked ${m.answers[0]}`)];
+    } else if (m.kind === 'wager') {
       shape = [el('div', { className: 'num-display' }, (m.wager || 0).toLocaleString()), el('p', { className: 'muted' }, 'points on the line')];
     } else if (m.index != null) {
       shape = [RT.answerCard(m.index, m.text)];
@@ -419,6 +467,21 @@
       title = s.unique ? `${s.unique} unique answer${s.unique === 1 ? '' : 's'}!` : s.answered ? 'Nothing unique this time' : "Time's up!";
       detail = [s.shared && `${s.shared} shared`, s.rejected && `${s.rejected} rejected`].filter(Boolean).join(' · ');
       $('#result-list').replaceChildren(...(s.mine || []).map(markRow));
+    } else if (s.kind === 'split') {
+      const [a] = s.answers;
+      if (s.noVotes) {
+        icon = '–';
+        title = 'Nobody picked a side';
+        detail = 'No points this round.';
+      } else if (!s.answered) {
+        icon = '⏱';
+        title = "Time's up!";
+        detail = 'You didn’t lock in a guess.';
+      } else {
+        icon = s.closest ? '🎯' : s.off <= 10 ? '≈' : '✗';
+        title = s.closest ? 'Closest guess!' : !s.off ? 'Spot on!' : s.off <= 10 ? `So close! ${s.off}% off` : `${s.off}% off`;
+        detail = `You guessed ${s.guess}% ${a}. The room: ${s.actual}% ${a}.` + (s.bonus ? ` Includes the +${s.bonus} bonus.` : '');
+      }
     } else if (!s.answered) {
       icon = '⏱';
       title = "Time's up!";

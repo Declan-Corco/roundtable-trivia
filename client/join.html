@@ -84,6 +84,33 @@
     <div class="p-answers" id="p-answers"></div>
   </section>
 
+  <!-- Split Decision: guess what percent of the room picked the first answer -->
+  <section class="screen input-screen" id="screen-guess" hidden>
+    <div class="p-qhead">
+      <span id="g-counter"></span>
+      <span class="p-timer" id="g-timer"></span>
+    </div>
+    <div class="progress p-timebar"><div id="g-timebar"></div></div>
+    <div class="input-body">
+      <p class="g-question" id="g-question"></p>
+      <p class="g-ask" id="g-ask"></p>
+      <div class="num-display" id="g-amount">50%</div>
+      <div class="sd-bar" id="g-bar" aria-hidden="true">
+        <div class="sd-a"><span class="sd-name" id="g-a"></span></div>
+        <div class="sd-b"><span class="sd-name" id="g-b"></span></div>
+      </div>
+      <input class="range" type="range" id="g-range" min="0" max="100" step="1" value="50" aria-label="Your guess, in percent">
+      <div class="quick-row" id="g-quick">
+        <button type="button" class="quick" data-step="-5">−5</button>
+        <button type="button" class="quick" data-step="-1">−1</button>
+        <button type="button" class="quick" data-step="1">+1</button>
+        <button type="button" class="quick" data-step="5">+5</button>
+      </div>
+      <button class="btn btn-primary btn-big btn-block" id="g-lock" type="button">Lock in guess</button>
+      <p class="hint" id="g-hint"></p>
+    </div>
+  </section>
+
   <!-- Only One: type as many answers as you can -->
   <section class="screen input-screen list-screen" id="screen-list" hidden>
     <div class="p-qhead">

@@ -230,6 +230,28 @@
     </div>
   </section>
 
+  <!-- Split Decision: the room's real split, with every table's guess pinned on it -->
+  <section class="screen split-screen" id="screen-split" hidden>
+    <div class="q-top">
+      <span class="q-counter" id="sd-progress"></span>
+      <h1 class="q-text" id="sd-prompt"></h1>
+      <p class="q-hint" id="sd-hint"></p>
+    </div>
+    <div class="sd-stage">
+      <div class="sd-pins" id="sd-pins"></div>
+      <div class="sd-bar big" id="sd-bar">
+        <div class="sd-a"><span class="sd-pct" id="sd-a-pct"></span><span class="sd-name" id="sd-a-name"></span></div>
+        <div class="sd-b"><span class="sd-name" id="sd-b-name"></span><span class="sd-pct" id="sd-b-pct"></span></div>
+      </div>
+      <div class="sd-counts"><span id="sd-a-count"></span><span id="sd-b-count"></span></div>
+      <ol class="sd-board" id="sd-board"></ol>
+    </div>
+    <div class="q-foot">
+      <span></span>
+      <button class="btn btn-primary" id="sd-next" type="button">Standings</button>
+    </div>
+  </section>
+
   <!-- 7. Standings: a race chart from old score to new -->
   <section class="screen" id="screen-scoreboard" hidden>
     <div class="standings">

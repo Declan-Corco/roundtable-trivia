@@ -1,6 +1,6 @@
 # roundtable — pull up a chair
 
-A live party-game night around a round table. The **host** puts a lobby on a big screen with a QR code and game PIN, and players join from their **phones**. The host picks one of two games, and can switch games between rounds without anyone re-joining.
+A live party-game night around a round table. The **host** puts a lobby on a big screen with a QR code and game PIN, and players join from their **phones**. The host picks one of three games, and can switch games between rounds without anyone re-joining.
 
 ### Wager Wars
 
@@ -34,11 +34,22 @@ With an Anthropic API key, Claude double-checks every round. When time is up, th
 - **Privacy:** each round's category and answers are sent to Anthropic. Leave the key unset to keep everything on your server.
 - `AI_CHECK_MODEL` changes the model (default `claude-haiku-5-5`).
 
+### Split Decision
+
+Each round, the big screen shows a question with two answers, like "Shower: morning or night?".
+
+1. **Pick a side.** Everyone picks one on their phone. The big screen only shows who has picked, never which side.
+2. **Guess the split.** Every table guesses what percent of the room picked the first answer, with a slider on their phone.
+3. **Reveal.** The bar slides to the room's real split, and every table's guess drops onto it as a pin. **A guess scores up to 100, less the further off it is** (exact = 100, 10% off = 80, 25% off = 50, 50% or more off = 0). **The closest guess also gets a 50-point bonus** (ties all get it).
+
+- About 140 questions ship in five packs (`server/split/`): Everyday Debates, Food Fights, Hot Takes, Would You Rather and Have You Ever?. The README there shows the format.
+- The host can type their own on the setup page, one per line: `Cats or dogs? | Cats | Dogs`, or just `Have you ever been to Paris?` for a yes / no question.
+
 ```
 Roundtable/
 ├── client/              ← the website (plain HTML/CSS/JS, no build step)
 │   ├── index.html       ← landing page: short intro + Join / Host buttons
-│   ├── join.html        ← player screen (phones): join, bet, answer, type answers
+│   ├── join.html        ← player screen (phones): join, bet, answer, type answers, guess the split
 │   ├── host.html        ← host screen (TV/projector/laptop): lobby, questions, scores
 │   ├── css/style.css    ← all styling; brand colours are variables at the top
 │   ├── fonts/           ← Fredoka (SIL Open Font License), served locally
@@ -49,6 +60,7 @@ Roundtable/
     │                       sources.js (Open Trivia DB question bank), trivia.js (question file loader)
     ├── trivia/          ← your own Wager Wars questions: one .json file each
     ├── onlyone/         ← Only One category packs: one .json file each
+    ├── split/           ← Split Decision question packs: one .json file each
     ├── setup.sh         ← one-command Linux installer
     └── package.json
 ```

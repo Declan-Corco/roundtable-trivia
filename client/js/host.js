@@ -51,8 +51,11 @@
   function renderGames() {
     $('#game-list').replaceChildren(
       ...catalog.map((g) => {
-        const n = g.kind === 'onlyone' ? g.packs.reduce((sum, p) => sum + p.count, 0) : g.packs.length + (g.online?.categories.length || 0);
-        const noun = g.kind === 'onlyone' ? `categor${n === 1 ? 'y' : 'ies'} to play` : `categor${n === 1 ? 'y' : 'ies'}`;
+        const n = g.kind === 'wager' ? g.packs.length + (g.online?.categories.length || 0) : g.packs.reduce((sum, p) => sum + p.count, 0);
+        const noun =
+          g.kind === 'onlyone' ? `categor${n === 1 ? 'y' : 'ies'} to play`
+          : g.kind === 'split' ? `question${n === 1 ? '' : 's'} to play`
+          : `categor${n === 1 ? 'y' : 'ies'}`;
         return el(
           'button',
           { type: 'button', className: `game-card game-${g.id}`, onclick: () => openGame(g) },
@@ -70,10 +73,15 @@
     );
   }
 
-  /** The game card's picture: a stack of betting chips (Wager Wars), or a lone "1" among crossed-out answers (Only One). */
+  /**
+   * The game card's picture: a stack of betting chips (Wager Wars), a lone "1" among crossed-out
+   * answers (Only One), or a split bar with a guess pinned on it (Split Decision).
+   */
   function gameArt(g) {
     const art = el('div', { className: `game-art art-${g.kind}`, 'aria-hidden': 'true' });
-    if (g.kind === 'onlyone') {
+    if (g.kind === 'split') {
+      art.append(el('span', { className: 'sd-art-pin' }), el('span', { className: 'sd-art-bar' }, el('span'), el('span')));
+    } else if (g.kind === 'onlyone') {
       art.append(el('span', { className: 'oo-art-x' }), el('span', { className: 'oo-art-x' }), el('span', { className: 'oo-art-one' }, '1'));
     } else {
       ['red', 'teal', 'yellow'].forEach((c) => art.append(el('span', { className: `chip-art s-${c}` })));
@@ -208,12 +216,12 @@
       );
     }
     if (game.customPrompts) {
-      // Only One: the host's own prompts, one per line. They're played first, in order.
+      // Only One / Split Decision: the host's own prompts, one per line. They're played first, in order.
       const box = el('textarea', {
         className: 'input custom-prompts',
         rows: 3,
         maxLength: 3000,
-        placeholder: 'Things in our group chat\nReasons Sam is late\nThings in this room',
+        placeholder: game.customPrompts.placeholder || '',
         value: choice.custom,
         oninput: (e) => {
           choice.custom = e.target.value;
@@ -225,7 +233,7 @@
           'div',
           { className: 'source' },
           el('h3', { className: 'source-head' }, 'Write your own'),
-          el('p', { className: 'credit-line' }, 'One per line. Your own categories are played first.'),
+          el('p', { className: 'credit-line' }, game.customPrompts.help || 'One per line.'),
           box
         )
       );
@@ -313,7 +321,7 @@
 
   const onlineChosen = () => [...choice.packs].filter((id) => id.includes(':'));
 
-  /** The host's own Only One prompts, one per line. */
+  /** The host's own prompts (Only One) or questions (Split Decision), one per line. */
   const customList = () => (choice.custom || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 50);
 
   function updateSummary() {
@@ -325,6 +333,11 @@
     if (game.kind === 'onlyone') {
       const playing = Math.min(settings.count, available);
       text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s each` : 'Pick a category, or write your own';
+    } else if (game.kind === 'split') {
+      const playing = Math.min(settings.count, available);
+      text = available
+        ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to pick, ${settings.guessTime}s to guess`
+        : 'Pick a question pack, or write your own';
     } else if (online) {
       const n = settings.count || 20;
       text = `${n} questions · from ${choice.packs.size + (choice.upload ? 1 : 0)} categor${choice.packs.size + (choice.upload ? 1 : 0) === 1 ? 'y' : 'ies'}`;
@@ -423,7 +436,7 @@
       Object.assign(current, { answered, answerCount });
       ooLabel(current);
       renderListSeats($('#oo-seats'), seats, tableSize);
-    } else if (phase === 'question') {
+    } else if (phase === 'question' || phase === 'guess') {
       $('#q-answered-label').textContent = `${answered} of ${playerCount} in`;
       renderAnswerSeats($('#q-seats'), seats, tableSize);
     }
@@ -484,12 +497,14 @@
         return renderIntro(state);
       case 'question':
         return state.kind === 'onlyone' ? renderListRound(state) : renderQuestion(state, false);
+      case 'guess': // Split Decision: the same screen as picking a side, now for guessing the split
+        return renderQuestion(state, false);
       case 'grouping':
         return renderGrading(state);
       case 'review':
         return renderReview(state);
       case 'reveal':
-        return renderQuestion(state, true);
+        return state.kind === 'split' ? renderSplitReveal(state) : renderQuestion(state, true);
       case 'scoreboard':
         return renderStandings(state);
       case 'finished':
@@ -648,14 +663,21 @@
     const next = $('#q-next');
     if (reveal) autoLabel(next, s.isLast ? 'Final results' : 'Standings', s.auto);
     else {
-      next.textContent = 'Skip';
+      next.textContent = s.kind !== 'split' ? 'Skip' : s.phase === 'guess' ? 'Close guesses' : 'Close voting';
       next.classList.remove('auto');
     }
     next.classList.toggle('btn-primary', reveal);
   }
 
-  /** The line under the question: after the reveal, the biggest swings each way. */
+  /**
+   * The line under the question: Split Decision says what to do on the phone; after a Wager Wars
+   * reveal, the biggest swings each way.
+   */
   function questionHint(s, reveal) {
+    if (s.kind === 'split' && s.phase === 'question') return 'Pick a side on your phone. Nobody sees which one you picked.';
+    if (s.kind === 'split' && s.phase === 'guess') {
+      return `${s.votes} vote${s.votes === 1 ? '' : 's'} in. Now guess: what percent picked “${s.answers[0]}”?`;
+    }
     if (!reveal || !s.bets) return '';
     const { biggestWin: w, biggestLoss: l } = s.bets;
     return [w && `Biggest win: ${w.name} ${RT.signed(w.points)}`, l && `Biggest loss: ${l.name} ${RT.signed(l.points)}`]
@@ -859,6 +881,74 @@
     }
   });
 
+  // ---- Split Decision reveal: the bar slides from 50/50 to the room's real split, then every
+  // table's guess drops onto it as a pin in their seat colour; the closest guesses are listed below.
+
+  function renderSplitReveal(s) {
+    $('#sd-progress').textContent = `${s.gameName} · Round ${s.index + 1} of ${s.total}`;
+    $('#sd-prompt').textContent = s.question;
+    const [a, b] = s.answers;
+    const none = s.actual == null;
+    const pct = none ? 50 : s.actual;
+    $('#sd-a-name').textContent = a;
+    $('#sd-b-name').textContent = b;
+    $('#sd-a-pct').textContent = none ? '' : `${pct}%`;
+    $('#sd-b-pct').textContent = none ? '' : `${100 - pct}%`;
+    const [na, nb] = s.counts;
+    $('#sd-a-count').textContent = none ? '' : `${na} picked ${a}`;
+    $('#sd-b-count').textContent = none ? '' : `${nb} picked ${b}`;
+    const winners = s.guesses.filter((g) => g.closest);
+    $('#sd-hint').textContent = none
+      ? 'Nobody picked a side this round, so there was nothing to guess.'
+      : !s.guesses.length
+        ? `${s.votes} vote${s.votes === 1 ? '' : 's'}, but nobody guessed.`
+        : `Closest: ${winners.map((g) => g.name).join(', ')}, ${winners[0].off ? `${winners[0].off}% off` : 'spot on'} · +${s.bonus} bonus`;
+
+    // The bar starts at 50/50 and slides to the real split.
+    const bar = $('#sd-bar');
+    bar.classList.toggle('empty', none);
+    bar.style.setProperty('--a', '50%');
+    requestAnimationFrame(() => requestAnimationFrame(() => bar.style.setProperty('--a', `${pct}%`)));
+
+    // Pins: guesses close together stack in rows so every seat number stays readable.
+    const rows = [];
+    const pins = [...s.guesses]
+      .sort((x, y) => x.guess - y.guess)
+      .map((g, i) => {
+        let row = rows.findIndex((last) => g.guess - last >= 4.5);
+        if (row === -1) row = rows.length < 4 ? rows.length : rows.indexOf(Math.min(...rows));
+        rows[row] = g.guess;
+        return el(
+          'span',
+          {
+            className: `sd-pin s-${seatColor(g.seat)}${g.closest ? ' best' : ''}`,
+            style: `left:${g.guess}%; --row:${row}; animation-delay:${0.9 + i * 0.05}s`,
+            title: `${g.name}: ${g.guess}%`,
+          },
+          String(g.seat)
+        );
+      });
+    $('#sd-pins').style.setProperty('--rows', Math.max(1, rows.length));
+    $('#sd-pins').replaceChildren(...pins);
+
+    // The closest guesses
+    $('#sd-board').replaceChildren(
+      ...s.guesses.slice(0, 6).map((g, i) =>
+        el(
+          'li',
+          { className: g.closest ? 'best' : '', style: `animation-delay:${1.2 + i * 0.08}s` },
+          el('span', { className: `seat-no s-${seatColor(g.seat)}` }, g.seat),
+          el('span', { className: 'sd-who' }, g.name),
+          el('span', { className: 'sd-guess' }, `${g.guess}%`),
+          el('span', { className: 'sd-off' }, g.off ? `${g.off}% off` : 'spot on'),
+          el('span', { className: 'sd-pts' }, `+${g.points}`)
+        )
+      )
+    );
+    autoLabel($('#sd-next'), s.isLast ? 'Final results' : 'Standings', s.auto);
+    showScreen('screen-split');
+  }
+
   // ---- Standings: each player's bar races from their old score to their new one
 
   function renderStandings(s) {
@@ -941,6 +1031,7 @@
   $('#score-next').addEventListener('click', () => send('host:next'));
   $('#oo-next').addEventListener('click', () => send('host:next'));
   $('#rv-next').addEventListener('click', () => send('host:next'));
+  $('#sd-next').addEventListener('click', () => send('host:next'));
   $('#lock-btn').addEventListener('click', () => send('host:lock', { locked: !current?.locked }));
   // Play again / change game: the table goes back to the lobby while the host picks the next game.
   $('#change-game-btn').addEventListener('click', () => send('host:reopen'));
@@ -965,7 +1056,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.target.closest('input, textarea, button')) return;
     if (e.key !== ' ' && e.key !== 'ArrowRight' && e.key !== 'PageDown') return;
-    const btn = ['#start-btn', '#w-next', '#q-next', '#oo-next', '#rv-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
+    const btn = ['#start-btn', '#w-next', '#q-next', '#oo-next', '#rv-next', '#sd-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
     if (btn) {
       e.preventDefault();
       btn.click();

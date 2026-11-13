@@ -7,7 +7,11 @@
 //   Only One ('onlyone')  — each round shows a category; tables type as many answers as they can, and
 //                            only answers no other table wrote score. Prompts: .json packs in
 //                            server/onlyone/, or prompts the host types in.
-// The engine for both is game.js; Only One's answer matching is matcher.js.
+//   Split Decision ('split') — everyone secretly picks one of two answers ("Morning or night shower?"),
+//                            then every table guesses what percent of the room picked the first one;
+//                            the closer the guess, the more it scores. Questions: .json packs in
+//                            server/split/, or questions the host types in.
+// The engine for all of them is game.js; Only One's answer matching is matcher.js.
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -114,7 +118,41 @@ const ONLY_ONE = {
   ],
 };
 
-const GAMES = [WAGER, ONLY_ONE];
+const SPLIT = {
+  id: 'split',
+  kind: 'split',
+  unit: 'round',
+  name: 'Split Decision',
+  tagline: 'Guess how the room splits.',
+  description:
+    'Everyone secretly picks a side, like "Shower: morning or night?". Then every table guesses what percent ' +
+    'of the room picked the first answer. The closer the guess, the more it scores (up to 100), and the ' +
+    'closest table gets a 50-point bonus.',
+  defaultPacks: () => [...loadSplitPacks().packs.keys()], // every pack ticked to start
+  settings: [
+    {
+      id: 'count',
+      label: 'Rounds',
+      options: [5, 8, 10, 15].map((v) => ({ value: v, label: String(v) })),
+      default: 8,
+    },
+    {
+      id: 'time',
+      label: 'Time to pick a side',
+      options: [10, 15, 20].map((s) => ({ value: s, label: `${s}s` })),
+      default: 15,
+    },
+    {
+      id: 'guessTime',
+      label: 'Time to guess',
+      options: [15, 20, 30].map((s) => ({ value: s, label: `${s}s` })),
+      default: 20,
+    },
+    AUTO_SETTING,
+  ],
+};
+
+const GAMES = [WAGER, ONLY_ONE, SPLIT];
 const byId = new Map(GAMES.map((g) => [g.id, g]));
 
 const MAX_PROMPT = 100;
@@ -153,6 +191,62 @@ function loadPromptPacks() {
   return { packs, errors };
 }
 
+// Split Decision: a question and its two answers. An answer is at most MAX_OPTION characters so it
+// fits on a phone button and on the split bar.
+const MAX_OPTION = 24;
+const cleanOption = (v) => cleanPrompt(v).slice(0, MAX_OPTION);
+
+/**
+ * One Split Decision question from a pack or the host: "Question?" (a yes/no question),
+ * { question, a, b }, or [question, a, b]. Returns { question, a, b } or null.
+ */
+function splitQuestion(raw) {
+  let question;
+  let a = '';
+  let b = '';
+  if (typeof raw === 'string') question = raw;
+  else if (Array.isArray(raw)) [question, a, b] = raw;
+  else if (raw && typeof raw === 'object') ({ question, a, b } = raw);
+  question = cleanPrompt(question);
+  a = cleanOption(a);
+  b = cleanOption(b);
+  if (!question) return null;
+  if (!a && !b) [a, b] = ['Yes', 'No'];
+  if (!a || !b || a.toLowerCase() === b.toLowerCase()) return null;
+  return { question, a, b };
+}
+
+/** Split Decision packs: every .json file in server/split/ (see the README there). Bad files are skipped. */
+function loadSplitPacks() {
+  const packs = new Map();
+  const errors = [];
+  let files = [];
+  try {
+    files = fs.readdirSync(config.SPLIT_DIR).filter((f) => f.toLowerCase().endsWith('.json')).sort();
+  } catch (err) {
+    errors.push(`Cannot read folder ${config.SPLIT_DIR}: ${err.message}`);
+  }
+  for (const file of files) {
+    const id = path.basename(file, path.extname(file));
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(config.SPLIT_DIR, file), 'utf8'));
+      if (!raw || !Array.isArray(raw.questions) || !raw.questions.length) throw new Error('"questions" must be a non-empty array.');
+      const questions = raw.questions.map(splitQuestion).filter(Boolean);
+      if (!questions.length) throw new Error('no usable questions.');
+      packs.set(id, {
+        id,
+        title: cleanPrompt(raw.title) || id,
+        icon: typeof raw.icon === 'string' ? raw.icon.slice(0, 8) : '',
+        description: String(raw.description || '').slice(0, 200),
+        questions,
+      });
+    } catch (err) {
+      errors.push(`${file}: ${err.message}`);
+    }
+  }
+  return { packs, errors };
+}
+
 const loadPacks = () => loadSets(config.TRIVIA_DIR);
 
 /** Questions from a pack, labelled with the pack's title as their category (shown before betting). */
@@ -164,6 +258,7 @@ const publicSettings = (game) => game.settings.map(({ id, label, hint, slider, o
 function listGames() {
   const trivia = loadPacks();
   const prompts = loadPromptPacks();
+  const split = loadSplitPacks();
   return [
     {
       id: WAGER.id,
@@ -188,13 +283,36 @@ function listGames() {
       tagline: ONLY_ONE.tagline,
       description: ONLY_ONE.description,
       allowUpload: false,
-      customPrompts: true, // the host can type their own prompts
+      // The host can type their own prompts, one per line.
+      customPrompts: {
+        placeholder: 'Things in our group chat\nReasons Sam is late\nThings in this room',
+        help: 'One per line. Your own categories are played first.',
+      },
       packNoun: 'categories',
       defaultPacks: [...prompts.packs.keys()],
       settings: publicSettings(ONLY_ONE),
       online: null,
       packs: [...prompts.packs.values()].map((p) => ({ id: p.id, title: p.title, icon: p.icon, description: p.description, count: p.prompts.length })),
       errors: prompts.errors,
+    },
+    {
+      id: SPLIT.id,
+      kind: SPLIT.kind,
+      unit: SPLIT.unit,
+      name: SPLIT.name,
+      tagline: SPLIT.tagline,
+      description: SPLIT.description,
+      allowUpload: false,
+      customPrompts: {
+        placeholder: 'Cats or dogs? | Cats | Dogs\nHave you ever been to Paris?',
+        help: 'One per line: the question, then its two answers after | marks. A question on its own is yes / no. Your own questions are played first.',
+      },
+      packNoun: 'questions',
+      defaultPacks: [...split.packs.keys()],
+      settings: publicSettings(SPLIT),
+      online: null,
+      packs: [...split.packs.values()].map((p) => ({ id: p.id, title: p.title, icon: p.icon, description: p.description, count: p.questions.length })),
+      errors: split.errors,
     },
   ];
 }
@@ -227,6 +345,7 @@ async function buildRound({ game: gameId, packs = [], customSet, customPrompts, 
   if (!game) throw new Error('That game no longer exists. Refresh the page.');
   const settings = parseSettings(game, rawSettings || {});
   if (game.kind === 'onlyone') return buildPromptRound(game, packs, customPrompts, settings);
+  if (game.kind === 'split') return buildSplitRound(game, packs, customPrompts, settings);
   const { sets } = loadPacks();
 
   const chosen = [...new Set((Array.isArray(packs) ? packs : []).map(String))];
@@ -344,4 +463,53 @@ function buildPromptRound(game, packIds, customPrompts, settings) {
   return { game, settings, round: { title, questions } };
 }
 
-module.exports = { listGames, buildRound, loadPromptPacks, GAMES };
+/**
+ * Split Decision: `settings.count` questions drawn from the chosen packs and/or the host's own,
+ * typed one per line as "Question | Answer A | Answer B" (or just "Question?" for yes / no).
+ */
+function buildSplitRound(game, packIds, customLines, settings) {
+  const { packs } = loadSplitPacks();
+  const pool = [];
+  const titles = [];
+  for (const id of [...new Set((Array.isArray(packIds) ? packIds : []).map(String))]) {
+    const pack = packs.get(id);
+    if (!pack) throw new Error('One of those question packs no longer exists. Refresh the page.');
+    pool.push(...pack.questions.map((q) => ({ ...q, category: pack.title })));
+    titles.push(pack.title);
+  }
+  shuffle(pool);
+  const own = (Array.isArray(customLines) ? customLines : [])
+    .slice(0, 50)
+    .map((line) => {
+      const [question, a = '', b = ''] = String(line ?? '').split('|');
+      return splitQuestion({ question, a, b });
+    })
+    .filter(Boolean);
+  if (own.length) {
+    titles.push('Your own');
+    pool.unshift(...own.map((q) => ({ ...q, category: 'Your own' }))); // played first, in the order typed
+  }
+  if (!pool.length) throw new Error('Pick at least one question pack, or type your own questions.');
+  const seen = new Set();
+  const questions = [];
+  for (const q of pool) {
+    const key = q.question.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    questions.push({
+      question: q.question,
+      category: q.category,
+      answers: [q.a, q.b],
+      correct: [],
+      time: settings.time, // to pick a side
+      guessTime: settings.guessTime, // to guess the split
+      points: 'standard',
+    });
+    if (questions.length >= settings.count) break;
+  }
+  const unique = [...new Set(titles)];
+  const title = unique.length <= 2 ? unique.join(' & ') : `${unique.length} packs`;
+  return { game, settings, round: { title, questions } };
+}
+
+module.exports = { listGames, buildRound, loadPromptPacks, loadSplitPacks, GAMES };

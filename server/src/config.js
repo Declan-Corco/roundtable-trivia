@@ -19,6 +19,8 @@ module.exports = {
   TRIVIA_DIR: process.env.TRIVIA_DIR || path.join(__dirname, '..', 'trivia'),
   // Folder containing Only One category packs.
   ONLYONE_DIR: process.env.ONLYONE_DIR || path.join(__dirname, '..', 'onlyone'),
+  // Folder containing Split Decision question packs.
+  SPLIT_DIR: process.env.SPLIT_DIR || path.join(__dirname, '..', 'split'),
   // Folder for files the server writes itself, e.g. the Open Trivia DB question bank.
   DATA_DIR: process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
   // Folder containing the website frontend.
