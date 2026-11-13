@@ -228,6 +228,8 @@ io.on('connection', (socket) => {
   socket.on('host:cancel-setup', handler(async () => hostGame().cancelChoosing()));
   // Only One review: the host merges, splits or rejects answers before the round is scored.
   socket.on('host:oo-edit', handler(async (edit) => hostGame().editGroups(edit)));
+  // Table Takedown: the host takes down an answer the filter missed, during the vote.
+  socket.on('host:td-hide', handler(async ({ id }) => hostGame().hideTdAnswer(id)));
   socket.on('host:start', handler(async () => hostGame().start()));
   socket.on('host:next', handler(async () => hostGame().next()));
   socket.on('host:lock', handler(async ({ locked }) => hostGame().setLocked(locked)));
@@ -281,6 +283,9 @@ io.on('connection', (socket) => {
   socket.on('player:oo-add', handler(async ({ text }) => playerGame().addListAnswer(socket.data.playerId, text)));
   socket.on('player:oo-remove', handler(async ({ id }) => playerGame().removeListAnswer(socket.data.playerId, id)));
   socket.on('player:oo-done', handler(async ({ done }) => playerGame().setListDone(socket.data.playerId, done !== false)));
+  // Table Takedown: send (or replace) this table's answer; vote for another table's answer.
+  socket.on('player:td-answer', handler(async ({ text }) => playerGame().submitTdAnswer(socket.data.playerId, text)));
+  socket.on('player:td-vote', handler(async ({ id }) => playerGame().submitTdVote(socket.data.playerId, id)));
   // Split Decision: the percent of the room this table thinks picked the first answer.
   socket.on('player:guess', handler(async ({ value }) => playerGame().submitGuess(socket.data.playerId, value)));
 
@@ -333,8 +338,8 @@ server.listen(config.PORT, config.HOST, () => {
   matcher.loadModel(); // Only One's answer-matching model, so the first round doesn't wait for it
   console.log(
     aicheck.enabled()
-      ? `  Claude check: on for Only One (${config.AI_CHECK_MODEL})`
-      : '  Claude check: off (set ANTHROPIC_API_KEY to turn it on for Only One)'
+      ? `  Claude check: on for Only One (${config.AI_CHECK_MODEL}) and Table Takedown moderation (${config.MODERATION_MODEL})`
+      : '  Claude check: off (set ANTHROPIC_API_KEY to turn it on for Only One and Table Takedown)'
   );
   const bank = sources.bankStatus();
   console.log(`  Question bank: ${bank.ready} questions ready${bank.filling ? ', filling up in the background' : ''}`);

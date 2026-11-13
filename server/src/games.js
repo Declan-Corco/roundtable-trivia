@@ -11,6 +11,11 @@
 //                            then every table guesses what percent of the room picked the first one;
 //                            the closer the guess, the more it scores. Questions: .json packs in
 //                            server/split/, or questions the host types in.
+//   Table Takedown ('takedown') — every table writes one funny answer to a prompt; the answers go up
+//                            anonymously and everyone votes for the best (never their own). Votes score,
+//                            the top answer wins a bonus, and voting for the winner scores too. Answers
+//                            are moderated (moderate.js) for the crowd the host picks. Prompts: .json
+//                            packs in server/takedown/, or prompts the host types in.
 // The engine for all of them is game.js; Only One's answer matching is matcher.js.
 const crypto = require('crypto');
 const fs = require('fs');
@@ -18,6 +23,7 @@ const path = require('path');
 const config = require('./config');
 const { loadSets, validateSet } = require('./trivia');
 const sources = require('./sources');
+const moderation = require('./moderate');
 
 const DEFAULT_ONLINE_COUNT = 20; // when a host picks "All" with online categories
 
@@ -152,26 +158,86 @@ const SPLIT = {
   ],
 };
 
-const GAMES = [WAGER, ONLY_ONE, SPLIT];
+/**
+ * Table Takedown's crowd setting: how strict the filter is. A server can lock it for every host
+ * with TAKEDOWN_FILTER (e.g. a school server set to "family").
+ */
+function crowdSetting() {
+  const locked = moderation.CROWDS[config.TAKEDOWN_FILTER] ? config.TAKEDOWN_FILTER : '';
+  const ids = locked ? [locked] : Object.keys(moderation.CROWDS);
+  return {
+    id: 'crowd',
+    label: 'Crowd',
+    hint: locked
+      ? 'Set by this server.'
+      : moderation.enabled()
+        ? 'Claude checks every answer before it goes on the TV.'
+        : 'A word list checks answers (add an API key for Claude to check them).',
+    options: ids.map((id) => ({ value: id, label: moderation.CROWDS[id].label })),
+    default: ids[0],
+  };
+}
+
+const TAKEDOWN = {
+  id: 'takedown',
+  kind: 'takedown',
+  unit: 'round',
+  name: 'Table Takedown',
+  tagline: 'Write the funniest answer. Win the room.',
+  description:
+    'Each round shows a prompt, like "A terrible name for a pet goldfish". Every table writes one answer, and the answers ' +
+    'go up on the TV with no names. Everyone votes for their favourite, but not their own. Each vote is worth 100, the ' +
+    'top answer gets 100 more, and voting for the winner earns you 50.',
+  defaultPacks: () => [...loadPromptPacks(config.TAKEDOWN_DIR).packs.keys()],
+  get settings() {
+    return [
+      {
+        id: 'count',
+        label: 'Rounds',
+        options: [3, 5, 8].map((v) => ({ value: v, label: String(v) })),
+        default: 5,
+      },
+      {
+        id: 'time',
+        label: 'Time to write',
+        options: [45, 60, 90].map((s) => ({ value: s, label: `${s}s` })),
+        default: 60,
+      },
+      {
+        id: 'voteTime',
+        label: 'Time to vote',
+        options: [15, 20, 30].map((s) => ({ value: s, label: `${s}s` })),
+        default: 20,
+      },
+      crowdSetting(),
+      AUTO_SETTING,
+    ];
+  },
+};
+
+const GAMES = [WAGER, ONLY_ONE, SPLIT, TAKEDOWN];
 const byId = new Map(GAMES.map((g) => [g.id, g]));
 
 const MAX_PROMPT = 100;
 const cleanPrompt = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_PROMPT);
 
-/** Only One packs: every .json file in server/onlyone/ (see the README there). Bad files are skipped. */
-function loadPromptPacks() {
+/**
+ * Prompt packs: every .json file in a folder — server/onlyone/ (Only One) or server/takedown/
+ * (Table Takedown); see the README in each. Bad files are skipped.
+ */
+function loadPromptPacks(dir = config.ONLYONE_DIR) {
   const packs = new Map();
   const errors = [];
   let files = [];
   try {
-    files = fs.readdirSync(config.ONLYONE_DIR).filter((f) => f.toLowerCase().endsWith('.json')).sort();
+    files = fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.json')).sort();
   } catch (err) {
-    errors.push(`Cannot read folder ${config.ONLYONE_DIR}: ${err.message}`);
+    errors.push(`Cannot read folder ${dir}: ${err.message}`);
   }
   for (const file of files) {
     const id = path.basename(file, path.extname(file));
     try {
-      const raw = JSON.parse(fs.readFileSync(path.join(config.ONLYONE_DIR, file), 'utf8'));
+      const raw = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
       if (!raw || !Array.isArray(raw.prompts) || !raw.prompts.length) throw new Error('"prompts" must be a non-empty array.');
       const prompts = raw.prompts
         .map((p) => (typeof p === 'object' && p ? { prompt: cleanPrompt(p.prompt), time: Number(p.time) || 0 } : { prompt: cleanPrompt(p), time: 0 }))
@@ -259,6 +325,7 @@ function listGames() {
   const trivia = loadPacks();
   const prompts = loadPromptPacks();
   const split = loadSplitPacks();
+  const takedown = loadPromptPacks(config.TAKEDOWN_DIR);
   return [
     {
       id: WAGER.id,
@@ -314,6 +381,25 @@ function listGames() {
       packs: [...split.packs.values()].map((p) => ({ id: p.id, title: p.title, icon: p.icon, description: p.description, count: p.questions.length })),
       errors: split.errors,
     },
+    {
+      id: TAKEDOWN.id,
+      kind: TAKEDOWN.kind,
+      unit: TAKEDOWN.unit,
+      name: TAKEDOWN.name,
+      tagline: TAKEDOWN.tagline,
+      description: TAKEDOWN.description,
+      allowUpload: false,
+      customPrompts: {
+        placeholder: 'The worst thing to say at our office party\nA new name for this bar\nWhat Sam is secretly good at',
+        help: 'One per line. Your own prompts are played first.',
+      },
+      packNoun: 'prompts',
+      defaultPacks: [...takedown.packs.keys()],
+      settings: publicSettings(TAKEDOWN),
+      online: null,
+      packs: [...takedown.packs.values()].map((p) => ({ id: p.id, title: p.title, icon: p.icon, description: p.description, count: p.prompts.length })),
+      errors: takedown.errors,
+    },
   ];
 }
 
@@ -346,6 +432,11 @@ async function buildRound({ game: gameId, packs = [], customSet, customPrompts, 
   const settings = parseSettings(game, rawSettings || {});
   if (game.kind === 'onlyone') return buildPromptRound(game, packs, customPrompts, settings);
   if (game.kind === 'split') return buildSplitRound(game, packs, customPrompts, settings);
+  if (game.kind === 'takedown') {
+    // Same prompts as Only One's, from their own folder, with the vote time and crowd on each round.
+    const { packs: takedownPacks } = loadPromptPacks(config.TAKEDOWN_DIR);
+    return buildPromptRound(game, packs, customPrompts, settings, takedownPacks, { voteTime: settings.voteTime, crowd: settings.crowd });
+  }
   const { sets } = loadPacks();
 
   const chosen = [...new Set((Array.isArray(packs) ? packs : []).map(String))];
@@ -428,9 +519,11 @@ async function buildRound({ game: gameId, packs = [], customSet, customPrompts, 
   return { game, settings, round: { title, questions } };
 }
 
-/** Only One: `settings.count` prompts drawn from the chosen packs and/or the host's own prompts. */
-function buildPromptRound(game, packIds, customPrompts, settings) {
-  const { packs } = loadPromptPacks();
+/**
+ * Only One / Table Takedown: `settings.count` prompts drawn from the chosen packs and/or the host's
+ * own prompts. `extra` is added to every round (Table Takedown's vote time and crowd).
+ */
+function buildPromptRound(game, packIds, customPrompts, settings, packs = loadPromptPacks().packs, extra = {}) {
   const pool = [];
   const titles = [];
   for (const id of [...new Set((Array.isArray(packIds) ? packIds : []).map(String))]) {
@@ -455,7 +548,7 @@ function buildPromptRound(game, packIds, customPrompts, settings) {
     const key = p.prompt.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    questions.push({ question: p.prompt, category: p.category, time: p.time || settings.time, points: 'standard', answers: [], correct: [] });
+    questions.push({ question: p.prompt, category: p.category, time: p.time || settings.time, points: 'standard', answers: [], correct: [], ...extra });
     if (questions.length >= settings.count) break;
   }
   const unique = [...new Set(titles)];

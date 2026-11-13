@@ -1,0 +1,32 @@
+{
+  "title": "Work & School",
+  "icon": "🏫",
+  "description": "Meetings, homework and the office fridge.",
+  "prompts": [
+    "A bad excuse for not doing your homework",
+    "The worst thing to say in a job interview",
+    "A terrible name for a school mascot",
+    "What the teachers' lounge is really for",
+    "A useless class that should be required",
+    "The worst message to send to the group chat",
+    "A new excuse to leave a meeting early",
+    "A terrible motivational poster",
+    "What the printer is so angry about",
+    "The worst subject line for an email to your boss",
+    "A field trip that went too far",
+    "A rejected school lunch",
+    "A terrible team-building activity",
+    "The real reason the Wi-Fi is down",
+    "An award nobody wants at the office party",
+    "The worst thing to forget on the first day",
+    "What's really in the mystery container in the office fridge",
+    "A terrible thing to write in a yearbook",
+    "The worst way to run a fire drill",
+    "An unhelpful thing to say during a group project",
+    "A conference nobody would attend",
+    "The worst out-of-office reply",
+    "The least useful school supply",
+    "What the class pet does on weekends",
+    "A terrible name for a startup"
+  ]
+}

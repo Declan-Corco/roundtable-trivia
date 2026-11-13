@@ -178,7 +178,7 @@
       <span class="q-counter" id="oo-progress"></span>
       <span class="tagline" id="oo-category"></span>
       <h1 class="oo-prompt" id="oo-prompt"></h1>
-      <p class="w-rules">Write as many as you can. Answers another table also wrote score nothing.</p>
+      <p class="w-rules" id="oo-rules">Write as many as you can. Answers another table also wrote score nothing.</p>
     </div>
     <div class="table-wrap w-table" id="oo-table">
       <div class="seats" id="oo-seats"></div>
@@ -202,8 +202,8 @@
     <span class="q-counter" id="gr-progress"></span>
     <h1 class="gr-prompt" id="gr-prompt"></h1>
     <div class="grading-mark" data-mark aria-hidden="true"></div>
-    <p class="big-title gr-title">Grading answers…</p>
-    <ul class="gr-steps">
+    <p class="big-title gr-title" id="gr-title">Grading answers…</p>
+    <ul class="gr-steps" id="gr-steps">
       <li id="gr-step-match"><span class="gr-dot" aria-hidden="true"></span>Matching answers that mean the same thing</li>
       <li id="gr-step-review"><span class="gr-dot" aria-hidden="true"></span>Reviewing answers</li>
     </ul>
@@ -249,6 +249,20 @@
     <div class="q-foot">
       <span></span>
       <button class="btn btn-primary" id="sd-next" type="button">Standings</button>
+    </div>
+  </section>
+
+  <!-- Table Takedown: the answers with no names while everyone votes; then who wrote what -->
+  <section class="screen td-screen" id="screen-td" hidden>
+    <div class="q-top">
+      <span class="q-counter" id="td-progress"></span>
+      <h1 class="q-text" id="td-prompt"></h1>
+      <p class="q-hint" id="td-hint"></p>
+    </div>
+    <div class="td-board" id="td-board"></div>
+    <div class="q-foot">
+      <span class="td-status"><span class="td-timer" id="td-timer"></span><span id="td-label"></span></span>
+      <button class="btn" id="td-next" type="button">Close voting</button>
     </div>
   </section>
 

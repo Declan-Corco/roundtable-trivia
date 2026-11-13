@@ -11,6 +11,9 @@
 //   Split Decision ('split') — each round: get ready (the question) → everyone secretly picks one of two
 //                            answers → every table guesses what percent of the room picked the first →
 //                            reveal (the real split; points for how close each guess was) → standings.
+//   Table Takedown ('takedown') — each round: get ready (the prompt) → every table writes one answer, each
+//                            checked as it's sent (moderate.js) → the answers go up with no names and
+//                            everyone votes for one that isn't theirs → reveal (who wrote what) → standings.
 //
 // After the last question the host can play again with the same table: everyone goes back to the
 // lobby (same PIN) while the host picks the next game. Players can join at any point.
@@ -19,6 +22,7 @@ const config = require('./config');
 const matcher = require('./matcher');
 const aicheck = require('./aicheck');
 const { screen } = require('./screen');
+const moderation = require('./moderate');
 
 const INTRO_MS = 4000; // "Get ready" screen before answers open
 const HOST_GRACE_MS = 2 * 60 * 1000; // host can refresh/reconnect within this window
@@ -47,6 +51,15 @@ const SPLIT_BONUS = 50;
 /** Points for a guess `off` percentage points from the room's real split. */
 const splitPoints = (off) => Math.round(SPLIT_POINTS * Math.max(0, 1 - off / SPLIT_RANGE));
 
+// Table Takedown: every vote an answer gets is worth TD_VOTE_POINTS to the table that wrote it; the
+// answer with the most votes (ties included) gets TD_WIN_BONUS more; every table that voted for a
+// winning answer gets TD_PICK_POINTS.
+const TD_VOTE_POINTS = 100;
+const TD_WIN_BONUS = 100;
+const TD_PICK_POINTS = 50;
+const TD_MAX_LEN = 80;
+const TD_CHECK_WAIT_MS = 6000; // when writing ends, wait at most this long for answers still being checked
+
 const newToken = () => crypto.randomBytes(18).toString('base64url');
 /** What a right answer pays per point bet: double-points questions pay 2x, practice questions 0. */
 const multiplier = (q) => (q.points === 'double' ? 2 : q.points === 'none' ? 0 : 1);
@@ -56,7 +69,8 @@ class Game {
     this.io = io;
     this.pin = pin;
     this.set = set;
-    this.kind = kind; // 'wager' | 'onlyone' | 'split'
+    this.kind = kind; // 'wager' | 'onlyone' | 'split' | 'takedown'
+    this.td = null; // Table Takedown: this round { answers: Map(playerId -> answer), ballot: [answer] }
     this.gameName = gameName;
     this.wagerTime = wagerTime; // seconds to place a bet
     this.autoAdvance = autoAdvance; // seconds before the reveal / results / standings move on by themselves (0 = manual)
@@ -175,6 +189,7 @@ class Game {
       list: [], // Only One: this round's answers [{ id, text, key }]
       done: false, // Only One: finished typing for this round
       guess: null, // Split Decision: percent of the room this table thinks picked the first answer
+      vote: null, // Table Takedown: the id of the answer this table voted for
       lastResult: null,
       spectator: this.state === 'finished', // joined after the last question: plays from the next game
       socketId: null,
@@ -289,6 +304,8 @@ class Game {
   isIn(p) {
     if (this.state === 'wager') return p.wager != null;
     if (this.state === 'guess') return p.guess != null;
+    if (this.state === 'vote') return p.vote != null || !this.canVote(p);
+    if (this.kind === 'takedown') return this.td?.answers.get(p.id)?.status === 'ok';
     return this.kind === 'onlyone' ? p.done : !!p.answer;
   }
 
@@ -393,7 +410,7 @@ class Game {
     this.groups = null;
     this.entries = new Map();
     for (const p of this.players.values()) {
-      Object.assign(p, { score: this.startScore, streak: 0, correctCount: 0, lastPoints: 0, prevRank: 0, answer: null, wager: null, list: [], done: false, guess: null, lastResult: null, spectator: false });
+      Object.assign(p, { score: this.startScore, streak: 0, correctCount: 0, lastPoints: 0, prevRank: 0, answer: null, wager: null, list: [], done: false, guess: null, vote: null, lastResult: null, spectator: false });
     }
   }
 
@@ -439,6 +456,8 @@ class Game {
       this.closeAnswers(); // "Skip" / "Time's up" — end the question now
     } else if (this.state === 'guess') {
       this.revealSplit(); // Split Decision: "Close guesses"
+    } else if (this.state === 'vote') {
+      this.revealTakedown(); // Table Takedown: "Close voting"
     }
   }
 
@@ -451,10 +470,12 @@ class Game {
       p.list = [];
       p.done = false;
       p.guess = null;
+      p.vote = null;
     }
     this.groups = null;
     this.entries = new Map();
     this.ai = null;
+    this.td = this.kind === 'takedown' ? { answers: new Map(), ballot: [], usage: {}, checked: 0, blocked: 0 } : null;
     if (this.kind === 'wager') this.openWagers();
     else this.startIntro();
   }
@@ -511,6 +532,7 @@ class Game {
   closeAnswers() {
     if (this.kind === 'onlyone') this.review();
     else if (this.kind === 'split') this.openGuesses();
+    else if (this.kind === 'takedown') this.closeWriting();
     else this.reveal();
   }
 
@@ -537,7 +559,7 @@ class Game {
 
   /** Moves on early once everyone has bet (wager), answered (question) or guessed (guess). */
   checkAllIn() {
-    if (this.state !== 'question' && this.state !== 'wager' && this.state !== 'guess') return;
+    if (!['question', 'wager', 'guess', 'vote'].includes(this.state)) return;
     // Players who dropped out recently (e.g. phone screen locked) still get waited for.
     const now = Date.now();
     const active = [...this.players.values()].filter(
@@ -546,6 +568,7 @@ class Game {
     if (!active.length || !active.every((p) => this.isIn(p))) return;
     if (this.state === 'wager') this.startIntro();
     else if (this.state === 'guess') this.revealSplit();
+    else if (this.state === 'vote') this.revealTakedown();
     else this.closeAnswers();
   }
 
@@ -931,6 +954,203 @@ class Game {
     this.broadcastState();
   }
 
+  // ------------------------------------------------------------- Table Takedown
+
+  /** This table's answer this round, for its phone: { text, status: 'checking' | 'ok' | 'blocked', why }. */
+  tdMine(p) {
+    const a = this.td?.answers.get(p.id);
+    return a ? { text: a.text, status: a.status, why: a.why } : null;
+  }
+
+  /**
+   * A table sends (or replaces) its answer. It's checked right away (moderate.js) and the phone hears
+   * back when the check is done, so a blocked table can write another while there's time.
+   */
+  submitTdAnswer(playerId, raw) {
+    if (this.kind !== 'takedown' || this.state !== 'question') throw new Error("Time's up for writing.");
+    const p = this.playerFor(playerId);
+    const text = String(raw ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, TD_MAX_LEN);
+    if (!text) throw new Error('Write an answer first.');
+    const prev = this.td.answers.get(p.id);
+    if (prev && prev.text === text && prev.status !== 'blocked') return { mine: this.tdMine(p) };
+    const q = this.question;
+    const a = {
+      id: `t${++this.seq}`,
+      playerId: p.id,
+      text,
+      status: 'checking',
+      why: '',
+      localWhy: moderation.localCheck(text, q.crowd), // the verdict to fall back on if Claude doesn't answer in time
+      hidden: false,
+    };
+    this.td.answers.set(p.id, a);
+    const round = this.qIndex;
+    a.check = moderation.moderate(text, q.question, q.crowd).then((v) => {
+      if (this.disposed || this.qIndex !== round || this.td?.answers.get(p.id) !== a) return; // replaced, or the round moved on
+      this.td.checked += 1;
+      for (const [k, n] of Object.entries(v.usage || {})) if (typeof n === 'number') this.td.usage[k] = (this.td.usage[k] || 0) + n;
+      if (v.error) console.warn(`[game ${this.pin}] Claude moderation failed (${v.error}); the word list decided`);
+      if (a.status !== 'checking') return; // writing already closed without this check
+      a.status = v.ok ? 'ok' : 'blocked';
+      a.why = v.ok ? '' : v.why || "Can't go on the TV";
+      if (!v.ok) this.td.blocked += 1;
+      if (this.state === 'question') {
+        this.sendPlayerState(p);
+        this.sendProgress();
+        this.checkAllIn();
+      }
+    });
+    this.touch();
+    this.sendPlayerState(p);
+    this.sendProgress();
+    return { mine: this.tdMine(p) };
+  }
+
+  /** Writing is over: wait (briefly) for answers still being checked, then put the approved ones up for a vote. */
+  async closeWriting() {
+    if (this.state !== 'question') return;
+    clearTimeout(this.timer);
+    const round = this.qIndex;
+    const pending = [...this.td.answers.values()].filter((a) => a.status === 'checking');
+    if (pending.length) {
+      this.state = 'moderating';
+      this.touch();
+      this.broadcastState();
+      let timer;
+      await Promise.race([Promise.allSettled(pending.map((a) => a.check)), new Promise((r) => (timer = setTimeout(r, TD_CHECK_WAIT_MS)))]);
+      clearTimeout(timer);
+      if (this.disposed || this.state !== 'moderating' || this.qIndex !== round) return;
+    }
+    for (const a of this.td.answers.values()) {
+      if (a.status !== 'checking') continue;
+      a.status = a.localWhy ? 'blocked' : 'ok'; // Claude was too slow: the word list decides
+      a.why = a.localWhy;
+    }
+    const ballot = [...this.td.answers.values()].filter((a) => a.status === 'ok');
+    for (let i = ballot.length - 1; i > 0; i--) {
+      const j = crypto.randomInt(i + 1);
+      [ballot[i], ballot[j]] = [ballot[j], ballot[i]];
+    }
+    ballot.forEach((a, i) => (a.label = i < 26 ? String.fromCharCode(65 + i) : String(i + 1)));
+    this.td.ballot = ballot;
+    const blocked = [...this.td.answers.values()].filter((a) => a.status === 'blocked').length;
+    const u = this.td.usage;
+    console.log(
+      `[game ${this.pin}] Table Takedown: ${ballot.length} answer${ballot.length === 1 ? '' : 's'} up, ${blocked} blocked` +
+        (moderation.enabled() ? `; Claude checked ${this.td.checked}, ${u.input_tokens ?? 0} in / ${u.output_tokens ?? 0} out tokens` : ' (word list only)')
+    );
+    if (!ballot.length) return this.revealTakedown();
+    this.openVoting();
+  }
+
+  openVoting() {
+    const q = this.question;
+    this.state = 'vote';
+    this.phaseEndsAt = Date.now() + q.voteTime * 1000;
+    this.touch();
+    this.broadcastState();
+    this.timer = setTimeout(() => this.revealTakedown(), q.voteTime * 1000 + 250);
+    this.checkAllIn(); // e.g. only one answer, and its table is the only one here
+  }
+
+  /** Is there an answer up that isn't this table's own? */
+  canVote(p) {
+    return !!this.td?.ballot.some((a) => a.playerId !== p.id);
+  }
+
+  submitTdVote(playerId, id) {
+    if (this.kind !== 'takedown' || this.state !== 'vote') throw new Error('Voting is closed.');
+    const p = this.playerFor(playerId);
+    if (p.vote != null) throw new Error('You already voted.');
+    const a = this.td.ballot.find((x) => x.id === String(id));
+    if (!a) throw new Error('That answer was taken down. Pick another.');
+    if (a.playerId === p.id) throw new Error("You can't vote for your own table's answer.");
+    p.vote = a.id;
+    this.touch();
+    this.sendPlayerState(p);
+    this.sendProgress();
+    this.checkAllIn();
+  }
+
+  /** The host takes an answer down during the vote (something the filter missed). Its votes go back to their tables. */
+  hideTdAnswer(id) {
+    if (this.kind !== 'takedown' || this.state !== 'vote') throw new Error('You can only take answers down during the vote.');
+    const a = this.td.ballot.find((x) => x.id === String(id));
+    if (!a) throw new Error('That answer is already gone.');
+    a.hidden = true;
+    a.status = 'blocked';
+    a.why = 'Taken down by the host';
+    this.td.ballot = this.td.ballot.filter((x) => x !== a);
+    for (const p of this.players.values()) if (p.vote === a.id) p.vote = null;
+    console.log(`[game ${this.pin}] the host took an answer down`);
+    this.touch();
+    this.broadcastState();
+    if (!this.td.ballot.length) this.revealTakedown();
+    else this.checkAllIn();
+  }
+
+  /** Votes are in: every vote scores for the table that wrote the answer; the top answer and its backers score more. */
+  revealTakedown() {
+    if (!['vote', 'question', 'moderating'].includes(this.state)) return;
+    clearTimeout(this.timer);
+    const ballot = this.td.ballot;
+    const counts = new Map(ballot.map((a) => [a.id, 0]));
+    for (const p of this.players.values()) if (p.vote != null && counts.has(p.vote)) counts.set(p.vote, counts.get(p.vote) + 1);
+    const top = Math.max(0, ...counts.values());
+    const winners = new Set(top > 0 ? ballot.filter((a) => counts.get(a.id) === top).map((a) => a.id) : []);
+
+    for (const p of this.players.values()) {
+      const a = this.td.answers.get(p.id);
+      const up = !!a && ballot.includes(a);
+      const votes = up ? counts.get(a.id) : 0;
+      const won = up && winners.has(a.id);
+      const backed = p.vote != null && winners.has(p.vote);
+      const points = votes * TD_VOTE_POINTS + (won ? TD_WIN_BONUS : 0) + (backed ? TD_PICK_POINTS : 0);
+      p.score += points;
+      p.lastPoints = points;
+      if (won) {
+        p.correctCount += 1; // the final screen counts round wins
+        p.streak += 1;
+      } else {
+        p.streak = 0;
+      }
+      p.lastResult = {
+        kind: 'takedown',
+        answered: !!a,
+        text: a?.text || '',
+        blocked: a?.status === 'blocked',
+        why: a?.status === 'blocked' ? a.why : '',
+        votes,
+        won,
+        backed,
+        voted: p.vote != null,
+        points,
+        correct: won || backed,
+        streak: p.streak,
+        values: { vote: TD_VOTE_POINTS, win: TD_WIN_BONUS, pick: TD_PICK_POINTS },
+      };
+    }
+    this.rankResults();
+
+    const backers = [...this.players.values()].filter((p) => p.vote != null && winners.has(p.vote)).length;
+    this.lastReveal = {
+      answers: ballot
+        .map((a) => {
+          const author = this.players.get(a.playerId);
+          return { id: a.id, label: a.label, text: a.text, votes: counts.get(a.id), winner: winners.has(a.id), seat: author?.seat ?? 0, name: author?.name ?? 'Left the game' };
+        })
+        .sort((x, y) => y.votes - x.votes || x.label.localeCompare(y.label, undefined, { numeric: true })),
+      votes: [...counts.values()].reduce((s, n) => s + n, 0),
+      backers,
+      filtered: [...this.td.answers.values()].filter((a) => a.status === 'blocked').length,
+      values: { vote: TD_VOTE_POINTS, win: TD_WIN_BONUS, pick: TD_PICK_POINTS },
+    };
+    this.state = 'reveal';
+    this.scheduleAuto();
+    this.touch();
+    this.broadcastState();
+  }
+
   /** Right answers win their bet (twice over on a double-points question); wrong or no answer loses it. */
   reveal() {
     if (this.state !== 'question') return;
@@ -1035,8 +1255,9 @@ class Game {
       total: this.total,
     };
     let payload;
-    if (this.state === 'reveal' && this.kind === 'split') {
-      // The room's real split and every table's guess (not who voted which way: votes stay private).
+    if (this.state === 'reveal' && (this.kind === 'split' || this.kind === 'takedown')) {
+      // Split Decision: the room's real split and every table's guess (not who voted which way: votes
+      // stay private). Table Takedown: every answer, who wrote it and how many votes it got.
       payload = { phase: 'reveal', ...common, question: q.question, isLast: this.isLastQuestion, playerCount: this.players.size, auto: this.autoInfo(), ...this.lastReveal };
       return this.toHost('host:state', payload);
     }
@@ -1085,6 +1306,24 @@ class Game {
           timeLeft: this.timeLeft(),
           answered: this.answeredCount(),
           answerCount: this.answerCount(),
+          playerCount: this.players.size,
+          seats: this.seatList(),
+          tableSize: this.tableSize(),
+        };
+        break;
+      case 'moderating': // Table Takedown: the last answers are still being checked
+        payload = { phase: 'moderating', ...common, question: q.question, answerCount: this.td.answers.size, playerCount: this.players.size };
+        break;
+      case 'vote': // Table Takedown: the answers are up, with no names
+        payload = {
+          phase: 'vote',
+          ...common,
+          question: q.question,
+          answers: this.td.ballot.map((a) => ({ id: a.id, label: a.label, text: a.text })),
+          filtered: [...this.td.answers.values()].filter((a) => a.status === 'blocked').length,
+          time: q.voteTime,
+          timeLeft: this.timeLeft(),
+          answered: this.answeredCount(),
           playerCount: this.players.size,
           seats: this.seatList(),
           tableSize: this.tableSize(),
@@ -1196,6 +1435,7 @@ class Game {
   statText(p) {
     if (this.kind === 'onlyone') return `${p.correctCount} unique answer${p.correctCount === 1 ? '' : 's'}`;
     if (this.kind === 'split') return `${p.correctCount} closest guess${p.correctCount === 1 ? '' : 'es'}`;
+    if (this.kind === 'takedown') return `${p.correctCount} round win${p.correctCount === 1 ? '' : 's'}`;
     return `${p.correctCount}/${this.total} correct`;
   }
 
@@ -1260,6 +1500,10 @@ class Game {
           payload = { phase: 'list', ...base, question: q.question, category: q.category || null, time: q.time, timeLeft: this.timeLeft(), list: this.publicList(p), done: p.done };
           break;
         }
+        if (this.kind === 'takedown') {
+          payload = { phase: 'write', ...base, question: q.question, time: q.time, timeLeft: this.timeLeft(), maxLength: TD_MAX_LEN, mine: this.tdMine(p) };
+          break;
+        }
         payload = p.answer
           ? { phase: 'answered', ...base, mine: this.mine(p) }
           : {
@@ -1272,6 +1516,29 @@ class Game {
               timeLeft: this.timeLeft(),
             };
         break;
+      case 'moderating':
+        payload = { phase: 'answered', ...base, mine: { kind: 'td', ...(this.tdMine(p) || { text: '', status: null }) } };
+        break;
+      case 'vote': {
+        const own = this.td.ballot.find((a) => a.playerId === p.id);
+        if (p.vote != null) {
+          const voted = this.td.ballot.find((a) => a.id === p.vote);
+          payload = { phase: 'answered', ...base, mine: { kind: 'tdvote', text: voted?.text || '', label: voted?.label || '' } };
+        } else if (!this.canVote(p)) {
+          payload = { phase: 'answered', ...base, mine: { kind: 'td', ...(this.tdMine(p) || { text: '', status: null }), alone: true } };
+        } else {
+          payload = {
+            phase: 'vote',
+            ...base,
+            question: q.question,
+            options: this.td.ballot.filter((a) => a.playerId !== p.id).map((a) => ({ id: a.id, label: a.label, text: a.text })),
+            own: own ? { label: own.label, text: own.text } : null,
+            time: q.voteTime,
+            timeLeft: this.timeLeft(),
+          };
+        }
+        break;
+      }
       case 'guess':
         payload =
           p.guess != null

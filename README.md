@@ -1,6 +1,6 @@
 # roundtable — pull up a chair
 
-A live party-game night around a round table. The **host** puts a lobby on a big screen with a QR code and game PIN, and players join from their **phones**. The host picks one of three games, and can switch games between rounds without anyone re-joining.
+A live party-game night around a round table. The **host** puts a lobby on a big screen with a QR code and game PIN, and players join from their **phones**. The host picks one of four games, and can switch games between rounds without anyone re-joining.
 
 ### Wager Wars
 
@@ -45,6 +45,22 @@ Each round, the big screen shows a question with two answers, like "Shower: morn
 - About 140 questions ship in five packs (`server/split/`): Everyday Debates, Food Fights, Hot Takes, Would You Rather and Have You Ever?. The README there shows the format.
 - The host can type their own on the setup page, one per line: `Cats or dogs? | Cats | Dogs`, or just `Have you ever been to Paris?` for a yes / no question.
 
+### Table Takedown
+
+Each round, the big screen shows a prompt, like "A terrible name for a pet goldfish".
+
+1. **Write.** Every table writes one answer on its phone. Each answer is checked as soon as it's sent, so a table whose answer is blocked can write another before time runs out.
+2. **Vote.** The answers go up on the TV with no names, and every table votes for its favourite, but never its own.
+3. **Reveal.** The TV shows who wrote what. **Each vote an answer gets is worth 100** to the table that wrote it, **the top answer gets 100 more** (ties all get it), and **every table that voted for the winner gets 50**, so it pays to back the answer you think the room will pick.
+
+**Moderation.** The host picks the crowd on the setup page: **Family-friendly** (the default: no swearing, innuendo or drugs), **Grown-ups** (swearing and innuendo are fine) or **Anything goes**. Slurs, hate aimed at groups, threats, personal information and anything sexual involving minors are blocked for every crowd.
+
+- **With an API key**, Claude (`MODERATION_MODEL`, default Claude Haiku 5.5) reads every answer together with its prompt, so it catches innuendo and insults a word list can't, and lets through what a word list would wrongly block. A table sees a short reason when its answer is blocked. About $0.00005 per answer; answers are sent to Anthropic. If Claude doesn't answer within 6 seconds of writing ending, or fails, the word list decides.
+- **Without a key**, a word list does the filtering (it handles leetspeak like "sh1t" and censored words like "f**k").
+- **The host can take down any answer** during the vote by clicking it on the TV. Votes for it go back to the tables that cast them.
+- **Lock the crowd for every host** with `TAKEDOWN_FILTER=family` (or `grownups` / `anything`) in `/etc/roundtable.env`, e.g. on a school server.
+- 100 prompts ship in four packs (`server/takedown/`), and the host can type their own on the setup page.
+
 ```
 Roundtable/
 ├── client/              ← the website (plain HTML/CSS/JS, no build step)
@@ -57,10 +73,12 @@ Roundtable/
 └── server/              ← the backend (Node.js + Socket.IO), also serves the website
     ├── src/             ← index.js (web server), games.js (the games, categories + settings),
     │                       game.js (game engine), matcher.js (Only One answer matching), screen.js (junk filter),
+    │                       moderate.js (Table Takedown moderation),
     │                       sources.js (Open Trivia DB question bank), trivia.js (question file loader)
     ├── trivia/          ← your own Wager Wars questions: one .json file each
     ├── onlyone/         ← Only One category packs: one .json file each
     ├── split/           ← Split Decision question packs: one .json file each
+    ├── takedown/        ← Table Takedown prompt packs: one .json file each
     ├── setup.sh         ← one-command Linux installer
     └── package.json
 ```

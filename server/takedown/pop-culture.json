@@ -1,0 +1,32 @@
+{
+  "title": "Screen Time",
+  "icon": "🎬",
+  "description": "Movies, TV, games and the internet.",
+  "prompts": [
+    "A movie sequel nobody needs",
+    "The worst name for a boy band",
+    "A reality show that should never be made",
+    "A terrible name for a superhero",
+    "What the villain really wanted all along",
+    "The worst challenge on a cooking show",
+    "A rejected theme park ride",
+    "A video game that would be impossible to win",
+    "A terrible catchphrase for an action hero",
+    "The worst prize on a game show",
+    "A new event for the Olympics",
+    "A song title that would never top the charts",
+    "The first thing the robots will do when they take over",
+    "A bad tagline for a horror movie",
+    "The worst idea for an app",
+    "A board game for people who can't stand each other",
+    "The most boring superpower",
+    "A terrible name for a streaming service",
+    "A fortune cookie message you really don't want",
+    "The worst mascot for a sports team",
+    "An emoji that should never exist",
+    "A video with zero views, for a good reason",
+    "A podcast nobody would listen to",
+    "What aliens think of our TV shows",
+    "The plot twist nobody saw coming in a cartoon for toddlers"
+  ]
+}

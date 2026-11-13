@@ -55,6 +55,7 @@
         const noun =
           g.kind === 'onlyone' ? `categor${n === 1 ? 'y' : 'ies'} to play`
           : g.kind === 'split' ? `question${n === 1 ? '' : 's'} to play`
+          : g.kind === 'takedown' ? `prompt${n === 1 ? '' : 's'} to play`
           : `categor${n === 1 ? 'y' : 'ies'}`;
         return el(
           'button',
@@ -75,11 +76,14 @@
 
   /**
    * The game card's picture: a stack of betting chips (Wager Wars), a lone "1" among crossed-out
-   * answers (Only One), or a split bar with a guess pinned on it (Split Decision).
+   * answers (Only One), a split bar with a guess pinned on it (Split Decision), or answer cards with
+   * a crowned winner (Table Takedown).
    */
   function gameArt(g) {
     const art = el('div', { className: `game-art art-${g.kind}`, 'aria-hidden': 'true' });
-    if (g.kind === 'split') {
+    if (g.kind === 'takedown') {
+      art.append(el('span', { className: 'td-art-card' }), el('span', { className: 'td-art-card' }), el('span', { className: 'td-art-card win' }, el('span', { className: 'td-art-crown' })));
+    } else if (g.kind === 'split') {
       art.append(el('span', { className: 'sd-art-pin' }), el('span', { className: 'sd-art-bar' }, el('span'), el('span')));
     } else if (g.kind === 'onlyone') {
       art.append(el('span', { className: 'oo-art-x' }), el('span', { className: 'oo-art-x' }), el('span', { className: 'oo-art-one' }, '1'));
@@ -338,6 +342,11 @@
       text = available
         ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to pick, ${settings.guessTime}s to guess`
         : 'Pick a question pack, or write your own';
+    } else if (game.kind === 'takedown') {
+      const playing = Math.min(settings.count, available);
+      text = available
+        ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to write, ${settings.voteTime}s to vote`
+        : 'Pick a prompt pack, or write your own';
     } else if (online) {
       const n = settings.count || 20;
       text = `${n} questions · from ${choice.packs.size + (choice.upload ? 1 : 0)} categor${choice.packs.size + (choice.upload ? 1 : 0) === 1 ? 'y' : 'ies'}`;
@@ -432,7 +441,10 @@
     if (phase === 'wager') {
       $('#w-label').textContent = `${answered} of ${playerCount} bets in`;
       renderAnswerSeats($('#w-seats'), seats, tableSize);
-    } else if (phase === 'question' && current.kind === 'onlyone') {
+    } else if (phase === 'vote') {
+      Object.assign(current, { answered });
+      $('#td-label').textContent = `${answered} of ${playerCount} voted`;
+    } else if (phase === 'question' && (current.kind === 'onlyone' || current.kind === 'takedown')) {
       Object.assign(current, { answered, answerCount });
       ooLabel(current);
       renderListSeats($('#oo-seats'), seats, tableSize);
@@ -496,7 +508,11 @@
       case 'intro':
         return renderIntro(state);
       case 'question':
-        return state.kind === 'onlyone' ? renderListRound(state) : renderQuestion(state, false);
+        return state.kind === 'onlyone' || state.kind === 'takedown' ? renderListRound(state) : renderQuestion(state, false);
+      case 'moderating':
+        return renderModerating(state);
+      case 'vote':
+        return renderTakedown(state, false);
       case 'guess': // Split Decision: the same screen as picking a side, now for guessing the split
         return renderQuestion(state, false);
       case 'grouping':
@@ -504,7 +520,7 @@
       case 'review':
         return renderReview(state);
       case 'reveal':
-        return state.kind === 'split' ? renderSplitReveal(state) : renderQuestion(state, true);
+        return state.kind === 'split' ? renderSplitReveal(state) : state.kind === 'takedown' ? renderTakedown(state, true) : renderQuestion(state, true);
       case 'scoreboard':
         return renderStandings(state);
       case 'finished':
@@ -706,13 +722,19 @@
 
   function ooLabel(s) {
     const n = s.answerCount || 0;
-    $('#oo-label').textContent = `${n} answer${n === 1 ? '' : 's'} · ${s.answered} of ${s.playerCount} done`;
+    $('#oo-label').textContent =
+      s.kind === 'takedown' ? `${s.answered} of ${s.playerCount} in` : `${n} answer${n === 1 ? '' : 's'} · ${s.answered} of ${s.playerCount} done`;
   }
 
+  /** Only One's list round; Table Takedown's writing uses the same screen. */
   function renderListRound(s) {
     $('#oo-progress').textContent = `${s.gameName} · Round ${s.index + 1} of ${s.total}`;
     $('#oo-category').textContent = s.category || '';
     $('#oo-prompt').textContent = s.question;
+    $('#oo-rules').textContent =
+      s.kind === 'takedown'
+        ? 'Each table writes one answer on its phone. The answers go up with no names.'
+        : 'Write as many as you can. Answers another table also wrote score nothing.';
     const table = $('#oo-table');
     table.classList.remove('low');
     showScreen('screen-oo');
@@ -736,7 +758,87 @@
     match.className = s.step === 'matching' ? 'active' : 'done';
     review.hidden = !s.review;
     review.className = s.step === 'checking' ? 'active' : '';
+    $('#gr-title').textContent = 'Grading answers…';
+    $('#gr-steps').hidden = false;
     showScreen('screen-grading');
+  }
+
+  /** Table Takedown: writing is over and the last answers are being checked (the same spinning logo). */
+  function renderModerating(s) {
+    $('#gr-progress').textContent = `${s.gameName} · Round ${s.index + 1} of ${s.total}`;
+    $('#gr-prompt').textContent = s.question;
+    $('#gr-title').textContent = 'Checking answers…';
+    $('#gr-steps').hidden = true;
+    const n = s.answerCount || 0;
+    $('#gr-count').textContent = `${n} answer${n === 1 ? '' : 's'} from ${s.playerCount} table${s.playerCount === 1 ? '' : 's'}`;
+    showScreen('screen-grading');
+  }
+
+  // ---- Table Takedown: the answers with no names while everyone votes (the host can take one down
+  // if the filter missed something); then who wrote each, with its votes, the winner first.
+
+  function renderTakedown(s, reveal) {
+    const screen = $('#screen-td');
+    screen.classList.toggle('revealed', reveal);
+    $('#td-progress').textContent = `${s.gameName} · Round ${s.index + 1} of ${s.total}`;
+    $('#td-prompt').textContent = s.question;
+    const winners = reveal ? s.answers.filter((a) => a.winner) : [];
+    $('#td-hint').textContent = !s.answers.length
+      ? s.filtered
+        ? 'No answers made it past the filter this round.'
+        : 'Nobody wrote an answer this round.'
+      : !reveal
+        ? 'Vote on your phone for the best one. Not your own!'
+        : !winners.length
+          ? 'No votes this round.'
+          : `${winners.length > 1 ? 'A tie! ' : ''}${winners.map((w) => w.name).join(' & ')} win${winners.length > 1 ? '' : 's'} +${s.values.win}` +
+            (s.backers ? ` · ${s.backers} table${s.backers === 1 ? '' : 's'} backed the winner (+${s.values.pick})` : '');
+
+    $('#td-board').replaceChildren(
+      ...s.answers.map((a, i) =>
+        el(
+          reveal ? 'div' : 'button',
+          {
+            className: `td-card${reveal && a.winner ? ' winner' : ''}${reveal && !a.winner ? ' lost' : ''}`,
+            style: `animation-delay:${i * (reveal ? 0.12 : 0.06)}s`,
+            type: reveal ? null : 'button',
+            title: reveal ? null : 'Take this answer down',
+            onclick: reveal
+              ? null
+              : async () => {
+                  if (!confirm(`Take this answer down?\n\n“${a.text}”\n\nIts votes go back to the tables that cast them.`)) return;
+                  const res = await request(socket, 'host:td-hide', { id: a.id });
+                  if (!res.ok) toast(res.error);
+                },
+          },
+          el('span', { className: 'td-label', dataset: { i: i % 4 } }, a.label),
+          el('span', { className: 'td-text' }, a.text),
+          reveal
+            ? el(
+                'span',
+                { className: 'td-foot' },
+                el('span', { className: 'td-by' }, el('span', { className: `seat-no s-${seatColor(a.seat)}` }, a.seat || '?'), a.name),
+                el('span', { className: 'td-votes' }, `${a.votes} vote${a.votes === 1 ? '' : 's'}`)
+              )
+            : null,
+          reveal && a.winner ? el('span', { className: 'td-crown', 'aria-label': 'Winner' }, '👑') : null
+        )
+      )
+    );
+
+    const next = $('#td-next');
+    next.classList.toggle('btn-primary', reveal);
+    if (reveal) {
+      autoLabel(next, s.isLast ? 'Final results' : 'Standings', s.auto);
+      $('#td-timer').textContent = '';
+      $('#td-label').textContent = s.filtered ? `${s.filtered} answer${s.filtered === 1 ? '' : 's'} filtered` : '';
+    } else {
+      next.textContent = 'Close voting';
+      next.classList.remove('auto');
+      $('#td-label').textContent = `${s.answered} of ${s.playerCount} voted` + (s.filtered ? ` · ${s.filtered} filtered` : '');
+      stopTimer = countdown(s.timeLeft, s.time * 1000, (sec) => ($('#td-timer').textContent = `${sec}s`));
+    }
+    showScreen('screen-td');
   }
 
   // ---- Results: the answers in three compact sections (unique, shared, rejected).
@@ -1032,6 +1134,7 @@
   $('#oo-next').addEventListener('click', () => send('host:next'));
   $('#rv-next').addEventListener('click', () => send('host:next'));
   $('#sd-next').addEventListener('click', () => send('host:next'));
+  $('#td-next').addEventListener('click', () => send('host:next'));
   $('#lock-btn').addEventListener('click', () => send('host:lock', { locked: !current?.locked }));
   // Play again / change game: the table goes back to the lobby while the host picks the next game.
   $('#change-game-btn').addEventListener('click', () => send('host:reopen'));
@@ -1056,7 +1159,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.target.closest('input, textarea, button')) return;
     if (e.key !== ' ' && e.key !== 'ArrowRight' && e.key !== 'PageDown') return;
-    const btn = ['#start-btn', '#w-next', '#q-next', '#oo-next', '#rv-next', '#sd-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
+    const btn = ['#start-btn', '#w-next', '#q-next', '#oo-next', '#rv-next', '#sd-next', '#td-next', '#score-next'].map((id) => $(id)).find((b) => b.offsetParent && !b.disabled);
     if (btn) {
       e.preventDefault();
       btn.click();

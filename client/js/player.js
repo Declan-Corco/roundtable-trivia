@@ -2,6 +2,7 @@
 // Wager Wars: a bet slider before each question, then A-D answer buttons.
 // Only One: type as many answers as you can for the category on the big screen.
 // Split Decision: pick a side, then guess what percent of the room picked the first answer.
+// Table Takedown: write one answer for the TV, then vote for another table's.
 (() => {
   const { $, el, showScreen, request, countdown, toast, watchConnection, storage, ordinal, signed } = window.RT;
   const SESSION_KEY = 'rt_player_session';
@@ -140,7 +141,10 @@
       case 'intro': {
         $('#intro-counter').textContent = `${s.gameName} · ${s.unit} ${s.index + 1} of ${s.total}`;
         $('#intro-hint').textContent =
-          s.kind === 'onlyone' ? 'Get ready to type as many as you can…' : s.kind === 'split' ? 'Get ready to pick a side…' : 'Answers coming up…';
+          s.kind === 'onlyone' ? 'Get ready to type as many as you can…'
+          : s.kind === 'split' ? 'Get ready to pick a side…'
+          : s.kind === 'takedown' ? 'Get ready to write something funny…'
+          : 'Answers coming up…';
         $('#intro-category').textContent = s.category || '';
         $('#intro-question').textContent = s.question || 'Get ready!';
         $('#intro-double').hidden = s.points !== 'double';
@@ -160,6 +164,12 @@
 
       case 'guess':
         return renderGuess(s);
+
+      case 'write':
+        return renderWrite(s);
+
+      case 'vote':
+        return renderVote(s);
 
       case 'list':
         return renderList(s);
@@ -348,6 +358,107 @@
     }
   });
 
+  // ---- Table Takedown: write one answer (it's checked before it goes on the TV), then vote
+
+  let writeRound = -1; // the round the answer box was last cleared for
+  let editing = false; // "Change it" pressed: show the box again
+
+  function renderWrite(s) {
+    startPhase(s);
+    if (writeRound !== s.index) {
+      writeRound = s.index;
+      editing = false;
+      $('#tw-input').value = '';
+    }
+    $('#tw-counter').textContent = `${s.unit} ${s.index + 1} of ${s.total}`;
+    $('#tw-prompt').textContent = s.question;
+    const m = s.mine;
+    // The box shows until there's an answer that's being checked or is on its way to the TV.
+    const showBox = !m || m.status === 'blocked' || editing;
+    $('#tw-form').hidden = !showBox;
+    $('#tw-status').hidden = showBox && !(m?.status === 'blocked');
+    $('#tw-send').disabled = false;
+    if (m) {
+      $('#tw-sent').textContent = `“${m.text}”`;
+      $('#tw-status').className = `tw-status ${m.status}`;
+      $('#tw-state').textContent =
+        m.status === 'checking' ? 'Checking it…' : m.status === 'ok' ? '✓ Ready for the TV' : `✕ ${m.why || "Can't go on the TV"}. Write another!`;
+      $('#tw-change').hidden = m.status === 'blocked' || editing;
+      if (m.status === 'blocked' && !$('#tw-input').value) $('#tw-input').value = m.text;
+    }
+    updateCount();
+    showScreen('screen-write');
+    runTimer('tw');
+    if (showBox && !/iPhone|iPad|Android/.test(navigator.userAgent)) $('#tw-input').focus({ preventScroll: true });
+  }
+
+  function updateCount() {
+    const n = $('#tw-input').value.length;
+    $('#tw-count').textContent = n > 60 ? `${80 - n} left` : '';
+  }
+  $('#tw-input').addEventListener('input', updateCount);
+  $('#tw-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      $('#tw-form').requestSubmit();
+    }
+  });
+  $('#tw-change').addEventListener('click', () => {
+    editing = true;
+    $('#tw-input').value = current?.mine?.text || '';
+    if (current?.phase === 'write') renderWrite(current);
+  });
+  $('#tw-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = $('#tw-input').value.trim();
+    if (!text) return;
+    const btn = $('#tw-send');
+    btn.disabled = true;
+    navigator.vibrate?.(20);
+    const res = await request(socket, 'player:td-answer', { text });
+    btn.disabled = false;
+    if (!res.ok) return toast(res.error);
+    editing = false;
+    $('#tw-input').value = '';
+    if (current?.phase === 'write') renderWrite({ ...current, mine: res.mine }); // the server's check result follows
+  });
+
+  function renderVote(s) {
+    startPhase(s);
+    $('#tv-counter').textContent = `${s.unit} ${s.index + 1} of ${s.total}`;
+    $('#tv-prompt').textContent = s.question;
+    const list = $('#tv-list');
+    list.classList.remove('locked');
+    list.replaceChildren(
+      ...s.options.map((o, i) =>
+        el(
+          'button',
+          {
+            type: 'button',
+            className: 'tv-option',
+            onclick: async (e) => {
+              if (list.classList.contains('locked')) return;
+              list.classList.add('locked');
+              e.currentTarget.classList.add('chosen');
+              navigator.vibrate?.(30);
+              const res = await request(socket, 'player:td-vote', { id: o.id });
+              if (!res.ok) {
+                toast(res.error);
+                list.classList.remove('locked');
+                e.target.closest('.tv-option')?.classList.remove('chosen');
+              }
+            },
+          },
+          el('span', { className: 'td-label', dataset: { i: i % 4 } }, o.label),
+          el('span', {}, o.text)
+        )
+      )
+    );
+    $('#tv-own').textContent = s.own ? `Yours is ${s.own.label}: “${s.own.text}”` : '';
+    showScreen('screen-vote');
+    runTimer('tv');
+  }
+
   // ---- Only One: type answers, see how they did
 
   let myList = [];
@@ -443,7 +554,17 @@
     const m = s.mine || {};
     $('#answered-title').textContent = m.kind === 'wager' ? 'Bet placed!' : 'Locked in!';
     let shape = [];
-    if (m.kind === 'guess') {
+    if (m.kind === 'td') {
+      $('#answered-title').textContent = m.alone ? 'Sit this one out' : m.status === 'blocked' ? 'Answer filtered' : 'Answers are in!';
+      shape = [
+        m.text ? el('div', { className: 'tw-sent big' }, `“${m.text}”`) : el('p', { className: 'muted' }, 'You didn’t send an answer this round.'),
+        m.alone ? el('p', { className: 'muted' }, 'Yours is the only answer up, so there’s nothing for you to vote for.') : null,
+        m.status === 'blocked' ? el('p', { className: 'muted' }, `${m.why || 'It can’t go on the TV'}.`) : null,
+      ];
+    } else if (m.kind === 'tdvote') {
+      $('#answered-title').textContent = 'Vote locked in!';
+      shape = [el('div', { className: 'tw-sent big' }, `${m.label}: “${m.text}”`)];
+    } else if (m.kind === 'guess') {
       shape = [el('div', { className: 'num-display' }, `${m.guess}%`), el('p', { className: 'muted' }, `of the room picked ${m.answers[0]}`)];
     } else if (m.kind === 'wager') {
       shape = [el('div', { className: 'num-display' }, (m.wager || 0).toLocaleString()), el('p', { className: 'muted' }, 'points on the line')];
@@ -451,7 +572,7 @@
       shape = [RT.answerCard(m.index, m.text)];
       if (m.wager) shape.push(el('p', { className: 'muted' }, `${m.wager.toLocaleString()} points on the line`));
     }
-    $('#answered-shape').replaceChildren(...shape);
+    $('#answered-shape').replaceChildren(...shape.filter(Boolean));
     showScreen('screen-answered');
   }
 
@@ -467,6 +588,24 @@
       title = s.unique ? `${s.unique} unique answer${s.unique === 1 ? '' : 's'}!` : s.answered ? 'Nothing unique this time' : "Time's up!";
       detail = [s.shared && `${s.shared} shared`, s.rejected && `${s.rejected} rejected`].filter(Boolean).join(' · ');
       $('#result-list').replaceChildren(...(s.mine || []).map(markRow));
+    } else if (s.kind === 'takedown') {
+      const v = s.values;
+      icon = s.won ? '👑' : s.votes ? '★' : s.backed ? '✓' : '✗';
+      title = s.won
+        ? 'You won the round!'
+        : s.votes
+          ? `${s.votes} vote${s.votes === 1 ? '' : 's'} for your answer`
+          : s.blocked
+            ? 'Your answer was filtered'
+            : !s.answered
+              ? 'No answer this round'
+              : 'No votes this time';
+      const parts = [];
+      if (s.votes) parts.push(`${s.votes} × ${v.vote}`);
+      if (s.won) parts.push(`+${v.win} for the win`);
+      if (s.backed) parts.push(`+${v.pick} for backing the winner`);
+      else if (s.voted) parts.push('Your vote didn’t go to the winner');
+      detail = s.blocked && s.why ? `${s.why}. ${parts.join(' · ')}` : parts.join(' · ');
     } else if (s.kind === 'split') {
       const [a] = s.answers;
       if (s.noVotes) {

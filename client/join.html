@@ -84,6 +84,42 @@
     <div class="p-answers" id="p-answers"></div>
   </section>
 
+  <!-- Table Takedown: write one answer for the TV -->
+  <section class="screen input-screen" id="screen-write" hidden>
+    <div class="p-qhead">
+      <span id="tw-counter"></span>
+      <span class="p-timer" id="tw-timer"></span>
+    </div>
+    <div class="progress p-timebar"><div id="tw-timebar"></div></div>
+    <div class="input-body">
+      <p class="g-question" id="tw-prompt"></p>
+      <form class="tw-form" id="tw-form" autocomplete="off">
+        <textarea class="input tw-input" id="tw-input" rows="3" maxlength="80" placeholder="Your table's answer" aria-label="Your table's answer" autocapitalize="sentences" enterkeyhint="send"></textarea>
+        <span class="tw-count" id="tw-count"></span>
+        <button class="btn btn-primary btn-big btn-block" id="tw-send" type="submit">Send it</button>
+      </form>
+      <div class="tw-status" id="tw-status" hidden>
+        <p class="tw-sent" id="tw-sent"></p>
+        <p class="tw-state" id="tw-state"></p>
+        <button class="btn btn-small" id="tw-change" type="button">Change it</button>
+      </div>
+      <p class="hint">One answer per table. It goes on the TV with no names.</p>
+    </div>
+  </section>
+
+  <!-- Table Takedown: vote for the best answer (not your own) -->
+  <section class="screen input-screen" id="screen-vote" hidden>
+    <div class="p-qhead">
+      <span id="tv-counter"></span>
+      <span class="p-timer" id="tv-timer"></span>
+    </div>
+    <div class="progress p-timebar"><div id="tv-timebar"></div></div>
+    <p class="g-question" id="tv-prompt"></p>
+    <p class="g-ask">Vote for the best one. Back the winner to score too.</p>
+    <div class="tv-list" id="tv-list"></div>
+    <p class="hint" id="tv-own"></p>
+  </section>
+
   <!-- Split Decision: guess what percent of the room picked the first answer -->
   <section class="screen input-screen" id="screen-guess" hidden>
     <div class="p-qhead">

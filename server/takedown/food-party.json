@@ -1,0 +1,32 @@
+{
+  "title": "Food & Parties",
+  "icon": "🍽️",
+  "description": "Restaurants, potlucks and party fails.",
+  "prompts": [
+    "The worst pizza topping combination",
+    "A terrible name for a restaurant",
+    "What the waiter is really thinking",
+    "A rejected ice cream flavor",
+    "The worst thing to bring to a potluck",
+    "A drink you should never order",
+    "The secret ingredient in grandma's famous recipe",
+    "A menu item that's definitely a trap",
+    "The worst food to eat on a first date",
+    "A dessert that should be against the law",
+    "A bad name for a food truck",
+    "A new rule for this table",
+    "What the last slice of pizza is thinking",
+    "The worst way to wake someone up",
+    "A terrible party theme",
+    "The least fun party game ever invented",
+    "What your phone autocorrects \"happy birthday\" to",
+    "A toast nobody wants to hear",
+    "The worst thing to say to the chef",
+    "A rejected cereal mascot",
+    "A kitchen gadget nobody needs",
+    "What really happens to lost socks",
+    "The worst scent for a candle",
+    "The worst thing to whisper in a library",
+    "A terrible name for a smoothie"
+  ]
+}

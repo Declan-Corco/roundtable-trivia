@@ -21,6 +21,8 @@ module.exports = {
   ONLYONE_DIR: process.env.ONLYONE_DIR || path.join(__dirname, '..', 'onlyone'),
   // Folder containing Split Decision question packs.
   SPLIT_DIR: process.env.SPLIT_DIR || path.join(__dirname, '..', 'split'),
+  // Folder containing Table Takedown prompt packs.
+  TAKEDOWN_DIR: process.env.TAKEDOWN_DIR || path.join(__dirname, '..', 'takedown'),
   // Folder for files the server writes itself, e.g. the Open Trivia DB question bank.
   DATA_DIR: process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
   // Folder containing the website frontend.
@@ -42,6 +44,11 @@ module.exports = {
   AI_CHECK_MODEL: process.env.AI_CHECK_MODEL || 'claude-haiku-5-5',
   // The grading screen waits this long for Claude, then shows the results without its check.
   AI_CHECK_WAIT_MS: int('AI_CHECK_WAIT_MS', 20000),
+  // Table Takedown: with the API key set, Claude checks every answer before it goes on the TV.
+  MODERATION_MODEL: process.env.MODERATION_MODEL || process.env.AI_CHECK_MODEL || 'claude-haiku-5-5',
+  // Table Takedown: lock the crowd filter for every host on this server (family, grownups or anything).
+  // Empty = hosts pick (Family-friendly is the default).
+  TAKEDOWN_FILTER: (process.env.TAKEDOWN_FILTER || '').trim().toLowerCase(),
   MAX_PLAYERS: int('MAX_PLAYERS', 200),
   MAX_GAMES: int('MAX_GAMES', 50),
 };
