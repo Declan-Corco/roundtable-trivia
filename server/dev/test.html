@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Test clients · roundtable</title>
+  <!-- A testing tool, not part of the game: fills a lobby with fake players, each with its own
+       connection like a real phone. Served at /test only when the server isn't in production
+       (see server/src/index.js). -->
+  <style>
+    :root { color-scheme: light; --ink: #2b1a10; --muted: #7a5a45; --paper: #fdf9f3; --line: #e8dccd; --red: #f04e37; --teal: #13ad9f; --yellow: #fcc12d; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.4 system-ui, sans-serif; color: var(--ink); background: var(--paper); }
+    main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 1.4rem; margin: 0 0 4px; }
+    p.note { margin: 0 0 20px; color: var(--muted); }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    label { font-weight: 600; }
+    input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+    #pin { width: 9ch; letter-spacing: 0.1em; font-weight: 600; }
+    #count { width: 6ch; }
+    button { font: inherit; font-weight: 600; padding: 8px 14px; border: 0; border-radius: 8px; background: var(--ink); color: #fff; cursor: pointer; }
+    button.light { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    button.danger { background: var(--red); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #status { min-height: 1.4em; color: var(--muted); }
+    #status.error { color: var(--red); }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+    th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+    td.actions { text-align: right; white-space: nowrap; }
+    td.actions button { padding: 5px 10px; font-size: 0.85rem; }
+    .seat { display: inline-grid; place-items: center; width: 1.8em; height: 1.8em; border-radius: 50%; font-weight: 700; font-size: 0.85rem; }
+    .s-red { background: var(--red); } .s-yellow { background: var(--yellow); } .s-teal { background: var(--teal); }
+    .away td { opacity: 0.5; }
+    .empty { color: var(--muted); padding: 16px 8px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Test clients</h1>
+  <p class="note">Adds fake players to a lobby, each on its own connection like a phone. Open the host screen in another tab, then enter its PIN here.</p>
+
+  <div class="row">
+    <label for="server">Server</label>
+    <input id="server" placeholder="this server" autocomplete="off" style="flex:1; min-width: 14em">
+    <button id="use-site" type="button" class="light">round-table.site</button>
+  </div>
+  <div class="row">
+    <label for="pin">Game PIN</label>
+    <input id="pin" inputmode="numeric" maxlength="7" placeholder="123 456" autocomplete="off">
+  </div>
+  <div class="row">
+    <button id="add-1" type="button">Add 1</button>
+    <button id="add-6" type="button">Add 6</button>
+    <input id="count" type="number" min="1" max="100" value="12" aria-label="How many to add">
+    <button id="add-n" type="button" class="light">Add these</button>
+    <span style="flex:1"></span>
+    <button id="drop-all" type="button" class="light">Disconnect all</button>
+    <button id="remove-all" type="button" class="danger">Remove all</button>
+  </div>
+  <p id="status" role="status"></p>
+
+  <table>
+    <thead><tr><th>Seat</th><th>Name</th><th>Status</th><th></th></tr></thead>
+    <tbody id="clients"><tr><td colspan="4" class="empty">No test clients yet.</td></tr></tbody>
+  </table>
+</main>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+  const NAMES = ['Ava', 'Ben', 'Cleo', 'Dev', 'Eli', 'Fran', 'Gus', 'Hana', 'Ivo', 'Jo', 'Kit', 'Lu', 'Max', 'Nia', 'Oz', 'Pip',
+    'Quin', 'Rae', 'Sam', 'Tia', 'Uma', 'Vic', 'Wren', 'Xan', 'Yas', 'Zed'];
+  const COLORS = ['red', 'yellow', 'teal']; // seat colours, as in client/js/common.js
+  const $ = (s) => document.querySelector(s);
+  const clients = []; // { id, name, socket, pin, token, seat, phase, connected, gone }
+  let made = 0;
+
+  const params = new URLSearchParams(location.search);
+  $('#pin').value = params.get('pin') || localStorage.getItem('rt_test_pin') || '';
+  $('#pin').addEventListener('input', () => localStorage.setItem('rt_test_pin', $('#pin').value));
+  // Which server the test clients join: blank for the one serving this page, or another one, e.g.
+  // https://round-table.site (WebSocket connections aren't limited to the page's own site).
+  $('#server').value = params.get('server') || localStorage.getItem('rt_test_server') || '';
+  const saveServer = () => localStorage.setItem('rt_test_server', $('#server').value.trim());
+  $('#server').addEventListener('input', saveServer);
+  $('#use-site').onclick = () => {
+    $('#server').value = 'https://round-table.site';
+    saveServer();
+  };
+  function serverUrl() {
+    const s = $('#server').value.trim().replace(/\/+$/, '');
+    if (!s) return undefined;
+    return /^https?:\/\//.test(s) ? s : `https://${s}`;
+  }
+
+  function status(text, error = false) {
+    $('#status').textContent = text;
+    $('#status').classList.toggle('error', error);
+  }
+
+  /** Emits and resolves with the server's { ok, error, ... } reply, like common.js request(). */
+  function request(socket, event, data) {
+    return new Promise((resolve) => {
+      socket.timeout(8000).emit(event, data || {}, (err, res) => resolve(err ? { ok: false, error: 'No reply from the server.' } : res));
+    });
+  }
+
+  function nextName() {
+    const base = NAMES[made % NAMES.length];
+    const round = Math.floor(made / NAMES.length);
+    made++;
+    return round ? `${base} ${round + 1}` : base;
+  }
+
+  function connect(url) {
+    return new Promise((resolve, reject) => {
+      const socket = io(url, { forceNew: true, transports: ['websocket'] });
+      socket.once('connect', () => resolve(socket));
+      socket.once('connect_error', (e) => {
+        socket.close();
+        reject(e);
+      });
+    });
+  }
+
+  function listen(c) {
+    c.socket.on('player:state', (s) => {
+      c.seat = s.seat;
+      c.phase = s.phase;
+      render();
+    });
+    c.socket.on('player:kicked', () => gone(c, 'removed by the host'));
+    c.socket.on('game:ended', () => gone(c, 'game ended'));
+    c.socket.on('disconnect', () => {
+      c.connected = false;
+      render();
+    });
+  }
+
+  function gone(c, why) {
+    c.gone = why;
+    c.connected = false;
+    c.socket.close();
+    render();
+  }
+
+  async function add(n) {
+    const pin = $('#pin').value.replace(/\D/g, '');
+    if (pin.length !== 6) return status('Enter the 6-digit PIN from the host screen first.', true);
+    const url = serverUrl();
+    status(`Adding ${n}…`);
+    let added = 0;
+    for (let i = 0; i < n; i++) {
+      const name = nextName();
+      let socket;
+      try {
+        socket = await connect(url);
+      } catch {
+        return status(`Can't connect to ${url || 'the server'}.`, true);
+      }
+      const res = await request(socket, 'player:join', { pin, name });
+      if (!res.ok) {
+        socket.close();
+        return status(`${name} couldn't join: ${res.error}`, true);
+      }
+      const c = { id: made, name, socket, url, pin: res.pin, token: res.token, seat: null, phase: '', connected: true, gone: null };
+      clients.push(c);
+      listen(c);
+      added++;
+      render();
+    }
+    status(`Added ${added}.`);
+  }
+
+  async function reconnect(c) {
+    try {
+      c.socket = await connect(c.url);
+    } catch {
+      return status("Can't connect to the server.", true);
+    }
+    const res = await request(c.socket, 'player:rejoin', { pin: c.pin, token: c.token });
+    if (!res.ok) return gone(c, res.error);
+    c.connected = true;
+    listen(c);
+    render();
+  }
+
+  async function remove(c) {
+    if (c.connected) await request(c.socket, 'player:leave');
+    c.socket.close();
+    clients.splice(clients.indexOf(c), 1);
+    render();
+  }
+
+  function render() {
+    const rows = clients.map((c) => {
+      const tr = document.createElement('tr');
+      if (!c.connected) tr.className = 'away';
+      const seat = document.createElement('td');
+      if (c.seat) {
+        const dot = document.createElement('span');
+        dot.className = `seat s-${COLORS[(c.seat - 1) % COLORS.length]}`;
+        dot.textContent = c.seat;
+        seat.append(dot);
+      }
+      const name = document.createElement('td');
+      name.textContent = c.name;
+      const state = document.createElement('td');
+      state.textContent = c.gone ? `Gone (${c.gone})` : c.connected ? c.phase || 'joined' : 'Disconnected';
+      const actions = document.createElement('td');
+      actions.className = 'actions';
+      if (!c.gone) {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'light';
+        toggle.textContent = c.connected ? 'Disconnect' : 'Reconnect';
+        toggle.onclick = () => (c.connected ? c.socket.close() : reconnect(c));
+        actions.append(toggle, ' ');
+      }
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'light';
+      del.textContent = c.gone ? 'Clear' : 'Remove';
+      del.onclick = () => remove(c);
+      actions.append(del);
+      tr.append(seat, name, state, actions);
+      return tr;
+    });
+    if (!rows.length) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td colspan="4" class="empty">No test clients yet.</td>';
+      rows.push(tr);
+    }
+    $('#clients').replaceChildren(...rows);
+  }
+
+  $('#add-1').onclick = () => add(1);
+  $('#add-6').onclick = () => add(6);
+  $('#add-n').onclick = () => add(Math.max(1, Math.min(100, Number($('#count').value) || 1)));
+  $('#drop-all').onclick = () => clients.forEach((c) => c.connected && c.socket.close());
+  $('#remove-all').onclick = async () => {
+    for (const c of [...clients]) await remove(c);
+    status('Removed all.');
+  };
+  // Closing this tab drops every test client (they show as disconnected, like phones going to sleep).
+</script>
+</body>
+</html>

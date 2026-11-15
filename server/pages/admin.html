@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Server admin · roundtable</title>
+  <!-- Update the server from GitHub and change its settings (server/src/admin.js). -->
+  <style>
+    :root { --ink: #2b1a10; --muted: #7a5a45; --paper: #fdf9f3; --line: #e8dccd; --red: #f04e37; --teal: #0b7f73; --amber: #a86a00; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.45 system-ui, sans-serif; color: var(--ink); background: var(--paper); }
+    main { max-width: 760px; margin: 0 auto; padding: 28px 16px 48px; }
+    h1 { font-size: 1.45rem; margin: 0 0 4px; }
+    h2 { font-size: 1.1rem; margin: 0 0 10px; }
+    p { margin: 0 0 12px; }
+    .muted { color: var(--muted); }
+    form, .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin: 16px 0; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    input, select { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; min-width: 0; }
+    #password { flex: 1; min-width: 12em; }
+    button { font: inherit; font-weight: 600; padding: 9px 16px; border: 0; border-radius: 8px; background: var(--ink); color: #fff; cursor: pointer; }
+    button.go { background: var(--teal); }
+    button.light { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+    button.small { padding: 5px 10px; font-size: 0.85rem; }
+    button:disabled { opacity: 0.45; cursor: default; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0 0 14px; }
+    dt { color: var(--muted); }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    code { font: 0.9em ui-monospace, Consolas, monospace; }
+    .state-done { color: var(--teal); font-weight: 600; }
+    .state-failed { color: var(--red); font-weight: 600; }
+    .state-running { color: var(--amber); font-weight: 600; }
+    .warn { color: var(--amber); font-weight: 600; }
+    .msg { min-height: 1.4em; margin: 10px 0 0; }
+    .msg.error { color: var(--red); }
+    pre { margin: 0; max-height: 360px; overflow: auto; background: #1e1410; color: #f3e6d6; padding: 12px; border-radius: 8px; font: 12.5px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
+    .field { display: grid; grid-template-columns: 13em 1fr; gap: 4px 14px; padding: 10px 0; border-top: 1px solid var(--line); align-items: start; }
+    .field:first-of-type { border-top: 0; }
+    .field label { font-weight: 600; padding-top: 7px; }
+    .field .control { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .field .control input, .field .control select { flex: 1; min-width: 10em; }
+    .field .hint { grid-column: 2; font-size: 0.85rem; color: var(--muted); }
+    .field.changed label::after { content: " •"; color: var(--teal); }
+    .badge { font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #efe6da; color: var(--muted); }
+    .badge.on { background: #dff3ef; color: var(--teal); }
+    @media (max-width: 560px) { .field { grid-template-columns: 1fr; } .field .hint { grid-column: 1; } .field label { padding-top: 0; } }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Server admin</h1>
+  <p class="muted">Update this server from GitHub and change its settings. Both restart the server, which ends any games running.</p>
+
+  <form id="login">
+    <div class="row">
+      <input id="password" type="password" placeholder="Admin password" autocomplete="current-password" aria-label="Admin password" required>
+      <button type="submit">Open</button>
+    </div>
+    <p id="login-msg" class="msg"></p>
+  </form>
+
+  <section id="panel" hidden>
+    <p>Games running now: <span id="games">–</span></p>
+
+    <div class="card">
+      <h2>Update</h2>
+      <dl>
+        <dt>Running</dt><dd id="version">–</dd>
+        <dt>Last update</dt><dd id="last">–</dd>
+      </dl>
+      <div class="row">
+        <button id="update" class="go" type="button">Update now</button>
+        <button id="refresh" class="light" type="button">Refresh</button>
+      </div>
+      <p id="update-msg" class="msg" role="status"></p>
+      <details id="log-box" hidden style="margin-top:10px">
+        <summary class="muted">Last update's output</summary>
+        <pre id="log" style="margin-top:8px"></pre>
+      </details>
+    </div>
+
+    <form class="card" id="settings">
+      <h2>Settings</h2>
+      <p class="muted" id="settings-note">Saved to /etc/roundtable.env. The server restarts to use them.</p>
+      <div id="fields"></div>
+      <div class="row" style="margin-top:12px">
+        <button id="save" class="go" type="submit" disabled>Save and restart</button>
+        <button id="reset" class="light" type="button" disabled>Undo changes</button>
+      </div>
+      <p id="settings-msg" class="msg" role="status"></p>
+    </form>
+  </section>
+</main>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  let password = '';
+  try { password = sessionStorage.getItem('rt_admin_pw') || ''; } catch {}
+  let latest = null; // the last status from the server
+  let edits = {}; // KEY → new value, for settings changed on the page
+  let polling = null;
+
+  async function api(path, extra = {}) {
+    const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password, ...extra }) });
+    return res.json().catch(() => ({ ok: false, error: `The server answered ${res.status}.` }));
+  }
+
+  function msg(id, text, error = false) {
+    $(id).textContent = text;
+    $(id).classList.toggle('error', error);
+  }
+
+  const when = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+
+  // ---- Update
+  function showUpdates(u) {
+    $('#version').replaceChildren();
+    if (!u.installed) {
+      $('#version').textContent = 'Updating from here is not set up yet.';
+      msg('#update-msg', 'Run the installer on the server once more to set it up: git pull && sudo bash server/setup.sh', true);
+    } else {
+      const code = document.createElement('code');
+      code.textContent = u.version || '?';
+      $('#version').append(code, ' ', u.subject || '');
+    }
+    const last = u.last;
+    $('#last').replaceChildren();
+    if (u.pending) $('#last').textContent = 'Requested, starting…';
+    else if (last) {
+      const state = document.createElement('span');
+      state.className = `state-${last.state}`;
+      state.textContent = { running: 'Updating…', done: 'Done', failed: 'Failed' }[last.state] || last.state;
+      const detail = last.state === 'done' && last.from && last.to ? (last.from === last.to ? ' (already up to date)' : ` (${last.from} → ${last.to})`) : '';
+      $('#last').append(state, `${detail} · ${when(last.at)}`);
+    } else $('#last').textContent = 'None yet';
+    $('#log-box').hidden = !u.log;
+    $('#log').textContent = u.log || '';
+    $('#update').disabled = !u.installed || u.pending || last?.state === 'running';
+  }
+
+  // ---- Settings
+  function showSettings(s) {
+    $('#settings-note').textContent = s.available
+      ? 'Saved to /etc/roundtable.env. The server restarts to use them.'
+      : 'Changing settings from here is not set up yet. Run the installer on the server once more: git pull && sudo bash server/setup.sh';
+    const fields = s.fields.map((f) => {
+      const row = document.createElement('div');
+      row.className = 'field';
+      const id = `f-${f.key}`;
+      const label = document.createElement('label');
+      label.htmlFor = id;
+      label.textContent = f.label;
+      const control = document.createElement('div');
+      control.className = 'control';
+      let input;
+      if (f.type === 'bool' || f.type === 'choice') {
+        input = document.createElement('select');
+        const choices = f.type === 'bool' ? [['', 'Default'], ['true', 'On'], ['false', 'Off']] : f.choices.map((c) => [c, c || 'Hosts pick']);
+        for (const [value, text] of choices) input.add(new Option(text, value));
+        input.value = f.value;
+      } else {
+        input = document.createElement('input');
+        input.type = f.secret ? 'password' : f.type === 'number' ? 'number' : 'text';
+        input.autocomplete = f.secret ? 'new-password' : 'off';
+        input.value = f.secret ? '' : f.value;
+        if (f.secret) input.placeholder = f.set ? 'Set (type to replace)' : 'Not set';
+      }
+      input.id = id;
+      input.disabled = !s.available;
+      if (f.key in edits) input.value = edits[f.key];
+      input.addEventListener('input', () => {
+        const original = f.secret ? null : f.value;
+        if (f.secret ? input.value === '' : input.value === original) delete edits[f.key];
+        else edits[f.key] = input.value;
+        dirty();
+      });
+      control.append(input);
+      if (f.secret) {
+        const badge = document.createElement('span');
+        badge.className = `badge${f.set ? ' on' : ''}`;
+        badge.textContent = f.set ? 'set' : 'not set';
+        control.append(badge);
+        if (f.set) {
+          const clear = document.createElement('button');
+          clear.type = 'button';
+          clear.className = 'light small';
+          clear.textContent = 'Clear';
+          clear.disabled = !s.available;
+          clear.onclick = () => {
+            edits[f.key] = '';
+            input.value = '';
+            input.placeholder = 'Will be cleared';
+            dirty();
+          };
+          control.append(clear);
+        }
+      }
+      row.append(label, control);
+      if (f.hint) {
+        const hint = document.createElement('div');
+        hint.className = 'hint';
+        hint.textContent = f.hint;
+        row.append(hint);
+      }
+      row.classList.toggle('changed', f.key in edits);
+      row.dataset.key = f.key;
+      return row;
+    });
+    $('#fields').replaceChildren(...fields);
+    dirty();
+    const last = s.last;
+    if (s.pending) msg('#settings-msg', 'Applying…');
+    else if (last && !$('#settings-msg').textContent) {
+      const keys = (last.changed || []).join(', ');
+      msg('#settings-msg', last.state === 'done' ? (keys ? `Last change: ${keys} · ${when(last.at)}` : '') : `The last change failed · ${when(last.at)}`, last.state !== 'done');
+    }
+  }
+
+  function dirty() {
+    const n = Object.keys(edits).length;
+    $('#save').disabled = !n || !latest?.settings.available || latest?.settings.pending;
+    $('#reset').disabled = !n;
+    document.querySelectorAll('.field').forEach((row) => row.classList.toggle('changed', row.dataset.key in edits));
+  }
+
+  function show(s) {
+    latest = s;
+    $('#games').textContent = s.games ? `${s.games} (an update or settings change will end ${s.games === 1 ? 'it' : 'them'})` : 'none';
+    $('#games').className = s.games ? 'warn' : '';
+    showUpdates(s.updates);
+    showSettings(s.settings);
+  }
+
+  async function refresh() {
+    const s = await api('/api/admin/status');
+    if (s.ok) show(s);
+    return s;
+  }
+
+  // While the server restarts, requests fail for a few seconds: keep asking until it's back and done.
+  function waitFor(done, onDone) {
+    clearInterval(polling);
+    polling = setInterval(async () => {
+      try {
+        const s = await refresh();
+        if (s.ok && done(s)) {
+          clearInterval(polling);
+          polling = null;
+          onDone(s);
+        }
+      } catch {}
+    }, 2000);
+  }
+
+  function confirmRestart(what) {
+    const games = latest?.games || 0;
+    return !games || confirm(`${games} game${games === 1 ? ' is' : 's are'} running. ${what} restarts the server and ends ${games === 1 ? 'it' : 'them'}. Go ahead?`);
+  }
+
+  $('#update').onclick = async () => {
+    if (!confirmRestart('Updating')) return;
+    $('#update').disabled = true;
+    msg('#update-msg', 'Asking the server to update…');
+    const res = await api('/api/admin/update').catch(() => ({ ok: false, error: "Can't reach the server." }));
+    if (!res.ok) {
+      $('#update').disabled = false;
+      return msg('#update-msg', res.error, true);
+    }
+    msg('#update-msg', 'Updating. This usually takes under a minute…');
+    waitFor(
+      (s) => !s.updates.pending && s.updates.last?.state !== 'running',
+      (s) => msg('#update-msg', s.updates.last?.state === 'done' ? 'Update finished.' : "The update failed. See the output below.", s.updates.last?.state !== 'done')
+    );
+  };
+
+  $('#settings').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const changes = { ...edits };
+    if (!Object.keys(changes).length || !confirmRestart('Saving settings')) return;
+    $('#save').disabled = true;
+    msg('#settings-msg', 'Saving…');
+    const res = await api('/api/admin/settings', { changes }).catch(() => ({ ok: false, error: "Can't reach the server." }));
+    if (!res.ok) {
+      dirty();
+      return msg('#settings-msg', res.error, true);
+    }
+    // If the page's own password changed, keep using the new one.
+    const fields = Object.fromEntries(latest.settings.fields.map((f) => [f.key, f]));
+    const usesUpdatePw = 'UPDATE_PASSWORD' in changes ? changes.UPDATE_PASSWORD !== '' : fields.UPDATE_PASSWORD.set;
+    if ('UPDATE_PASSWORD' in changes && changes.UPDATE_PASSWORD) password = changes.UPDATE_PASSWORD;
+    else if (!usesUpdatePw && 'HOST_PASSWORD' in changes) password = changes.HOST_PASSWORD;
+    try { sessionStorage.setItem('rt_admin_pw', password); } catch {}
+    edits = {};
+    msg('#settings-msg', 'Applying and restarting…');
+    const asked = Date.now();
+    waitFor(
+      (s) => !s.settings.pending && s.settings.last && Date.parse(s.settings.last.at) >= asked - 60000,
+      (s) => {
+        const keys = (s.settings.last.changed || []).join(', ');
+        msg('#settings-msg', s.settings.last.state === 'done' ? `Saved${keys ? `: ${keys}` : ''}. The server has restarted.` : 'Saving failed.', s.settings.last.state !== 'done');
+      }
+    );
+  });
+
+  $('#reset').onclick = () => {
+    edits = {};
+    msg('#settings-msg', '');
+    if (latest) showSettings(latest.settings);
+  };
+  $('#refresh').onclick = () => refresh().catch(() => msg('#update-msg', "Can't reach the server.", true));
+
+  $('#login').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    password = $('#password').value;
+    await open();
+  });
+
+  async function open() {
+    msg('#login-msg', '');
+    let s;
+    try {
+      s = await refresh();
+    } catch {
+      return msg('#login-msg', "Can't reach the server.", true);
+    }
+    if (!s.ok) {
+      try { sessionStorage.removeItem('rt_admin_pw'); } catch {}
+      return msg('#login-msg', s.error, true);
+    }
+    try { sessionStorage.setItem('rt_admin_pw', password); } catch {}
+    $('#login').hidden = true;
+    $('#panel').hidden = false;
+    if (s.updates.pending || s.updates.last?.state === 'running') {
+      msg('#update-msg', 'Updating…');
+      waitFor((x) => !x.updates.pending && x.updates.last?.state !== 'running', (x) => msg('#update-msg', x.updates.last?.state === 'done' ? 'Update finished.' : 'The update failed.', x.updates.last?.state !== 'done'));
+    }
+  }
+
+  if (password) open();
+</script>
+</body>
+</html>

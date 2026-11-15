@@ -71,8 +71,11 @@ SRC_ROOT="$(dirname "$SCRIPT_DIR")"
 # ----------------------------------------------------------------------------- uninstall
 if [[ $UNINSTALL -eq 1 ]]; then
   step "Uninstalling Roundtable Trivia"
-  systemctl disable --now "$APP" 2>/dev/null || true
-  rm -f "$SERVICE_FILE"; systemctl daemon-reload
+  systemctl disable --now "$APP" roundtable-update.path roundtable-settings.path 2>/dev/null || true
+  rm -f "$SERVICE_FILE" /usr/local/sbin/roundtable-update /usr/local/sbin/roundtable-settings \
+    /etc/systemd/system/roundtable-{update,settings}.{service,path}
+  rm -rf /var/lib/roundtable-admin
+  systemctl daemon-reload
   rm -rf "$INSTALL_DIR"
   rm -f "$ENV_FILE"
   id -u "$APP" &>/dev/null && userdel "$APP" || true
@@ -166,10 +169,13 @@ PACK_DIRS=(trivia onlyone split takedown) # question and category packs (see the
 for d in "${PACK_DIRS[@]}"; do mkdir -p "$INSTALL_DIR/server/$d"; done
 
 if [[ "$(realpath "$SRC_ROOT")" != "$(realpath "$INSTALL_DIR")" ]]; then
-  rm -rf "$INSTALL_DIR/client" "$INSTALL_DIR/server/src" "$INSTALL_DIR/server/scripts"
+  rm -rf "$INSTALL_DIR/client" "$INSTALL_DIR/server/src" "$INSTALL_DIR/server/scripts" "$INSTALL_DIR/server/pages" "$INSTALL_DIR/server/dev"
   cp -r "$SRC_ROOT/client" "$INSTALL_DIR/client"
   cp -r "$SRC_ROOT/server/src" "$INSTALL_DIR/server/src"
-  [[ -d "$SRC_ROOT/server/scripts" ]] && cp -r "$SRC_ROOT/server/scripts" "$INSTALL_DIR/server/scripts"
+  # scripts/: maintenance scripts; pages/: the update page (/admin); dev/: the test page (/test, off unless TEST_PAGE=true)
+  for d in scripts pages dev; do
+    if [[ -d "$SRC_ROOT/server/$d" ]]; then cp -r "$SRC_ROOT/server/$d" "$INSTALL_DIR/server/$d"; fi
+  done
   cp "$SRC_ROOT/server/package.json" "$INSTALL_DIR/server/"
   [[ -f "$SRC_ROOT/server/package-lock.json" ]] && cp "$SRC_ROOT/server/package-lock.json" "$INSTALL_DIR/server/"
   cp "$SRC_ROOT/server/setup.sh" "$INSTALL_DIR/server/"
@@ -241,6 +247,158 @@ case "$MODE" in
 esac
 PORT="$(grep -E '^PORT=' "$ENV_FILE" | cut -d= -f2- || true)"; PORT="${PORT:-3000}"
 ok "Settings saved"
+
+# ----------------------------------------------------------------------------- the admin page's helpers
+# The admin page (/admin) can update the server and change its settings, but the app runs as the
+# unprivileged "roundtable" user and can do neither itself. So the page only leaves a request file
+# in data/ (update-request or settings-request), and systemd starts a small root service when one
+# appears. Those services write their results to $STATE_DIR, which only root can write (the app
+# just reads it), so root never writes into a folder the app controls.
+DATA_DIR="$INSTALL_DIR/server/data"
+STATE_DIR="/var/lib/roundtable-admin"
+install -d -m 755 -o root -g root "$STATE_DIR"
+rm -f "$DATA_DIR/update-request" "$DATA_DIR/settings-request" # stale requests from before this install
+
+# Settings the admin page may change (enforced by the root service, not just the app). Not PORT or
+# HOST: a wrong value there takes the site offline, with no way back from the page.
+ADMIN_KEYS="PUBLIC_URL HOST_PASSWORD UPDATE_PASSWORD ALLOW_UPLOADS MAX_PLAYERS MAX_GAMES ANTHROPIC_API_KEY AI_CHECK_MODEL AI_CHECK_WAIT_MS MODERATION_MODEL TAKEDOWN_FILTER APPLE_APP_ID TEST_PAGE"
+
+# install_root_script PATH < script — via a new file moved into place: the updater runs this
+# installer from inside itself, and overwriting a running bash script in place would corrupt it.
+install_root_script() { cat > "$1.new"; chmod 755 "$1.new"; mv -f "$1.new" "$1"; }
+
+# watch_request NAME DESCRIPTION REQUEST_FILE SCRIPT TIMEOUT — a oneshot service, started by a
+# path unit whenever the request file appears.
+watch_request() {
+  cat > "/etc/systemd/system/$1.service" <<EOF
+[Unit]
+Description=Roundtable Trivia: $2
+
+[Service]
+Type=oneshot
+ExecStart=$4
+TimeoutStartSec=$5
+EOF
+  cat > "/etc/systemd/system/$1.path" <<EOF
+[Unit]
+Description=Roundtable Trivia: watch for "$2" requests from the admin page
+
+[Path]
+PathExists=$3
+Unit=$1.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+# ---- Settings: apply allowed keys from data/settings-request to the settings file, then restart.
+step "Setting up settings changes from the website"
+{
+  echo '#!/usr/bin/env bash'
+  echo "# Installed by server/setup.sh. Started by roundtable-settings.path when the admin page saves"
+  echo "# settings: applies them to ${ENV_FILE} (allowed keys only) and restarts the app."
+  echo 'set -uo pipefail'
+  printf 'ENV_FILE=%q\nDATA=%q\nSTATE=%q\nAPP=%q\nALLOWED=%q\n' "$ENV_FILE" "$DATA_DIR" "$STATE_DIR" "$APP" "$ADMIN_KEYS"
+  cat <<'EOF'
+umask 077
+REQ="$STATE/settings-request"
+# Take the request out of the app's reach before reading it. Moving a symlink moves the link
+# itself, and anything but a plain file is refused below.
+mv -fT "$DATA/settings-request" "$REQ" 2>/dev/null || exit 0
+status() { # status STATE CHANGED_KEYS_JSON SKIPPED
+  printf '{"state":"%s","at":"%s","changed":[%s],"skipped":%d}\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$2" "$3" > "$STATE/settings-status.json.new"
+  chmod 644 "$STATE/settings-status.json.new"
+  mv -f "$STATE/settings-status.json.new" "$STATE/settings-status.json"
+}
+if [[ -L "$REQ" || ! -f "$REQ" ]]; then rm -f "$REQ"; status failed "" 0; exit 1; fi
+
+# Each line: KEY BASE64VALUE. The new file is built next to the old one (in /etc, root only).
+WORK="$ENV_FILE.admin-new"
+cp "$ENV_FILE" "$WORK" || { rm -f "$REQ"; status failed "" 0; exit 1; }
+changed=""
+skipped=0
+while read -r key b64 _; do
+  [[ -n "$key" ]] || continue
+  if [[ " $ALLOWED " != *" $key "* || ! "$b64" =~ ^[A-Za-z0-9+/=]*$ ]]; then skipped=$((skipped + 1)); continue; fi
+  value="$(printf '%s' "$b64" | base64 -d 2>/dev/null)" || { skipped=$((skipped + 1)); continue; }
+  # One line per setting: no line breaks, and no trailing backslash (systemd reads that as "continued").
+  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* || "$value" == *\\ ]]; then skipped=$((skipped + 1)); continue; fi
+  K="$key" V="$value" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"] }
+    index($0, k "=") == 1 { if (!done) print k "=" v; done = 1; next }
+    { print }
+    END { if (!done) print k "=" v }' "$WORK" > "$WORK.2" && mv -f "$WORK.2" "$WORK"
+  changed="${changed:+$changed,}\"$key\""
+done < "$REQ"
+rm -f "$REQ"
+chmod 640 "$WORK"
+chgrp "$APP" "$WORK"
+mv -f "$WORK" "$ENV_FILE"
+[[ -n "$changed" ]] && systemctl restart "$APP"
+status done "$changed" "$skipped"
+EOF
+} | install_root_script /usr/local/sbin/roundtable-settings
+watch_request roundtable-settings "apply settings" "$DATA_DIR/settings-request" /usr/local/sbin/roundtable-settings 2min
+systemctl daemon-reload
+systemctl enable --now roundtable-settings.path >/dev/null 2>&1
+ok "Settings can be changed at /admin"
+
+# ---- Updates: git pull in the folder this installer was run from, then this installer again.
+UPDATER_BIN="/usr/local/sbin/roundtable-update"
+SRC_OWNER="$(stat -c %U "$SRC_ROOT")"
+SRC_HOME="$(getent passwd "$SRC_OWNER" | cut -d: -f6)"
+# git commands run as the folder's owner (git refuses to work in another user's folder as root).
+git_src() { runuser -u "$SRC_OWNER" -- env HOME="$SRC_HOME" git -C "$SRC_ROOT" "$@"; }
+if command -v git &>/dev/null && git_src rev-parse --is-inside-work-tree &>/dev/null; then
+  step "Setting up updates from the website"
+  {
+    echo '#!/usr/bin/env bash'
+    echo "# Installed by server/setup.sh. Started by roundtable-update.path when the admin page asks:"
+    echo "# pulls the latest code into ${SRC_ROOT} and re-runs the installer from it."
+    echo 'set -uo pipefail'
+    printf 'SRC=%q\nOWNER=%q\nOWNER_HOME=%q\nDATA=%q\nSTATE=%q\n' "$SRC_ROOT" "$SRC_OWNER" "$SRC_HOME" "$DATA_DIR" "$STATE_DIR"
+    cat <<'EOF'
+LOG="$STATE/update.log"
+rm -f "$DATA/update-request"
+git_() { runuser -u "$OWNER" -- env HOME="$OWNER_HOME" git -C "$SRC" "$@"; }
+json() { sed 's/\\/\\\\/g; s/"/\\"/g'; }
+FROM="$(git_ rev-parse --short HEAD 2>/dev/null || echo '?')"
+TO="$FROM"
+status() {
+  printf '{"state":"%s","at":"%s","from":"%s","to":"%s","subject":"%s"}\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$FROM" "$TO" "$(git_ log -1 --format=%s 2>/dev/null | json)" > "$STATE/update-status.json.new"
+  chmod 644 "$STATE/update-status.json.new"
+  mv -f "$STATE/update-status.json.new" "$STATE/update-status.json"
+}
+: > "$LOG"
+chmod 644 "$LOG"
+status running
+if {
+  echo "Updating ${SRC} ($(date))"
+  git_ pull --ff-only && TO="$(git_ rev-parse --short HEAD)" && bash "$SRC/server/setup.sh"
+} >> "$LOG" 2>&1; then
+  status done
+else
+  echo "The update failed." >> "$LOG"
+  status failed
+fi
+EOF
+  } | install_root_script "$UPDATER_BIN"
+  watch_request roundtable-update "update from GitHub" "$DATA_DIR/update-request" "$UPDATER_BIN" 15min
+  # Tells the app the updater is installed, and which commit it's running.
+  printf '{"source":"%s","version":"%s","subject":"%s"}\n' \
+    "$(printf '%s' "$SRC_ROOT" | sed 's/\\/\\\\/g; s/"/\\"/g')" \
+    "$(git_src rev-parse --short HEAD 2>/dev/null || echo '?')" \
+    "$(git_src log -1 --format=%s 2>/dev/null | sed 's/\\/\\\\/g; s/"/\\"/g')" > "$STATE_DIR/updater.json"
+  chmod 644 "$STATE_DIR/updater.json"
+  systemctl daemon-reload
+  systemctl enable --now roundtable-update.path >/dev/null 2>&1
+  ok "Updates can be started at /admin"
+else
+  rm -f "$STATE_DIR/updater.json"
+  warn "Not a git checkout (${SRC_ROOT}), so the admin page (/admin) can't update this server."
+fi
+echo "  The admin page's password is UPDATE_PASSWORD (or HOST_PASSWORD) in ${ENV_FILE}."
 
 # ----------------------------------------------------------------------------- systemd service
 step "Creating the background service"

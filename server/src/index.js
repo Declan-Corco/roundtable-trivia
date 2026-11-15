@@ -13,6 +13,7 @@ const { listGames, buildRound } = require('./games');
 const matcher = require('./matcher');
 const aicheck = require('./aicheck');
 const sources = require('./sources');
+const admin = require('./admin');
 const { Game } = require('./game');
 
 const app = express();
@@ -58,6 +59,68 @@ const sendPage = (name) => (_req, res) => {
 app.get(['/', '/index.html'], sendPage('index'));
 app.get(['/join', '/join.html'], sendPage('join'));
 app.get(['/host', '/host.html'], sendPage('host'));
+// A testing tool that fills a lobby with fake players (server/dev/test.html). Off on installed
+// servers (setup.sh sets NODE_ENV=production) unless TEST_PAGE=true.
+if (process.env.NODE_ENV !== 'production' || process.env.TEST_PAGE === 'true') {
+  app.get('/test', (_req, res) => {
+    res.set('Cache-Control', 'no-cache');
+    res.sendFile(path.join(__dirname, '..', 'dev', 'test.html'));
+  });
+}
+
+// The admin page: update from GitHub and change settings (see admin.js). Needs UPDATE_PASSWORD
+// (or HOST_PASSWORD); a few wrong guesses lock that address out for a while.
+app.get(['/admin', '/admin.html'], (_req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, '..', 'pages', 'admin.html'));
+});
+const adminFails = new Map(); // ip → { count, until }
+const ADMIN_MAX_FAILS = 8;
+const ADMIN_LOCK_MS = 15 * 60 * 1000;
+function adminCheck(req, res) {
+  if (!config.UPDATE_PASSWORD) {
+    res.status(403).json({ ok: false, error: 'Set UPDATE_PASSWORD (or HOST_PASSWORD) in /etc/roundtable.env to use this page.' });
+    return false;
+  }
+  const ip = req.ip || '?';
+  const fails = adminFails.get(ip);
+  if (fails && fails.until > Date.now()) {
+    res.status(429).json({ ok: false, error: 'Too many wrong passwords. Try again in 15 minutes.' });
+    return false;
+  }
+  if (!safeEqual(req.body?.password || '', config.UPDATE_PASSWORD)) {
+    const count = (fails?.count || 0) + 1;
+    adminFails.set(ip, { count, until: count >= ADMIN_MAX_FAILS ? Date.now() + ADMIN_LOCK_MS : 0 });
+    res.status(401).json({ ok: false, error: 'Wrong password.' });
+    return false;
+  }
+  adminFails.delete(ip);
+  return true;
+}
+app.post('/api/admin/status', express.json({ limit: '2kb' }), (req, res) => {
+  if (!adminCheck(req, res)) return;
+  res.json({ ok: true, games: games.size, ...admin.status() });
+});
+app.post('/api/admin/update', express.json({ limit: '2kb' }), (req, res) => {
+  if (!adminCheck(req, res)) return;
+  try {
+    admin.requestUpdate();
+    console.log(`Update requested from the admin page (${games.size} game(s) running).`);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(409).json({ ok: false, error: err.message });
+  }
+});
+app.post('/api/admin/settings', express.json({ limit: '16kb' }), (req, res) => {
+  if (!adminCheck(req, res)) return;
+  try {
+    admin.requestSettings(req.body?.changes);
+    console.log(`Settings change requested from the admin page: ${Object.keys(req.body.changes).join(', ')}.`);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
 
 app.use(
   express.static(config.CLIENT_DIR, {

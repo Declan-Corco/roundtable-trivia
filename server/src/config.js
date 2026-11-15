@@ -32,6 +32,9 @@ module.exports = {
   // If set, the host screen asks for this password before creating a game.
   // Recommended when the site is public on the internet.
   HOST_PASSWORD: process.env.HOST_PASSWORD || '',
+  // Password for the update page (/admin), which pulls the latest code from GitHub and reinstalls.
+  // Falls back to HOST_PASSWORD; with neither set, updating from the website is off.
+  UPDATE_PASSWORD: process.env.UPDATE_PASSWORD || process.env.HOST_PASSWORD || '',
   // iOS app ID(s) allowed to open join links straight from the Camera (universal links),
   // as TEAMID.bundle.id, comma-separated. Example: ABCDE12345.site.round-table.app
   APPLE_APP_IDS: (process.env.APPLE_APP_ID || process.env.APPLE_APP_IDS || '')

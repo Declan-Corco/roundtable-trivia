@@ -32,10 +32,11 @@ const VIEW = {
 };
 // Where the camera stands for each stage: azimuth is around the table (0 = seat 1 at the top of
 // the screen), elevation is how far above the horizon it looks down from, both in degrees; fill is
-// how much of the free area the table and stools take up.
+// how much of the free area the table and stools take up; swing is how much the pointer moves the
+// camera (none in the lobby: tilting a straight-down view just looks wrong).
 const VIEWS = {
-  menu: { azimuth: 28, elevation: 33, fill: 0.8 },
-  lobby: { azimuth: 0, elevation: 62, fill: 0.9 },
+  menu: { azimuth: 28, elevation: 33, fill: 0.8, swing: 1 },
+  lobby: { azimuth: 0, elevation: 90, fill: 0.9, swing: 0 }, // straight down over the table, seat 1 at the top
 };
 // Going from one page with the scene to another (landing → host and back), the old page leaves its
 // framing here, and the new one starts from it and glides to its own, so the table moves across
@@ -56,9 +57,12 @@ const STOOL_BASE_GLOW = 0.3; // how much of the stool bases' baked shading shows
 const BOARDS_PER_TILE = 10; // rows of floorboards in the floor texture
 const BOARD_WIDTH = 0.36; // one floorboard's width, as a fraction of a stool seat's width
 const POOL = 1.75; // radius of the pool of light on the floor, in "reaches" (centre to the farthest stool)
-const STOOL_GAP = 1.35; // stools around a big table stand at least this many stool widths apart (centre to centre)
-const STOOL_EASE = 0.45; // seconds for stools to slide to new places when more are added
-const MAX_STOOLS = 40; // guests past this many aren't given a stool of their own
+// Past the model's own stools, more go in rings further out: each ring stands RING_GAP stool widths
+// beyond the last and holds as many stools as fit round it, STOOL_GAP stool widths apart.
+const RING_GAP = 1.7;
+const STOOL_GAP = 1.4;
+const STOOL_EASE = 0.45; // seconds for new stools to pop up
+const MAX_STOOLS = 60; // guests past this many aren't given a stool of their own
 
 const root = document.documentElement;
 const rad = (deg) => (deg * Math.PI) / 180;
@@ -219,37 +223,58 @@ function build(THREE, canvas, model, floorMap, handoff) {
   const stoolOverhang = baseReach - baseRing; // from a stool's centre to its outer edge
   let stoolCount = modelStools;
 
-  /** Puts n stools round the table: the model's own layout for its own number, evenly spaced past that. */
-  function setStoolCount(n) {
-    n = Math.min(MAX_STOOLS, Math.max(modelStools, n));
-    if (!modelStools || n === stoolCount) return;
-    stoolCount = n;
-    const own = n === modelStools;
-    const ring = Math.max(baseRing, (n * stoolWidth * STOOL_GAP) / (2 * Math.PI));
-    const colours = Math.min(3, modelStools); // the model's stools go red, yellow, teal, red, …
-    for (let i = 0; i < Math.max(n, slots.length); i++) {
-      let slot = slots[i];
-      if (i >= n) {
-        if (slot) slot.node.visible = false;
-        continue;
-      }
-      if (!slot) {
-        const like = slots[i % colours]; // same cushion colour as the seat number's
-        const node = like.node.clone(); // shares the geometry and materials
-        model.add(node);
-        slot = { node, a0: like.a0, q0: like.q0, home: null, a: (i * 2 * Math.PI) / n, r: ring, s: 0 };
-        slots.push(slot);
-      }
-      if (!slot.node.visible) {
-        slot.node.visible = true;
-        slot.s = 0; // pops up again
-      }
-      slot.at = own ? slot.home.a : (i * 2 * Math.PI) / n;
-      slot.rt = own ? slot.home.r : ring;
-      slot.st = 1;
+  /**
+   * The rings of stools needed to seat this many: the model's own stools are the first ring, and
+   * each further ring stands further out and is filled all the way round.
+   */
+  function ringsFor(seats) {
+    const rings = [{ r: baseRing, n: modelStools, own: true }];
+    let total = modelStools;
+    while (total < Math.min(seats, MAX_STOOLS)) {
+      const r = baseRing + rings.length * RING_GAP * stoolWidth;
+      const n = Math.min(MAX_STOOLS - total, Math.floor((2 * Math.PI * r) / (stoolWidth * STOOL_GAP)));
+      rings.push({ r, n });
+      total += n;
     }
-    reachGoal = own ? baseReach : Math.max(baseReach, ring + stoolOverhang);
+    return rings;
+  }
+
+  /** Sets out enough stools for the highest seat taken. Seats go ring by ring, clockwise from the top. */
+  function setStoolCount(highestSeat) {
+    if (!modelStools) return;
+    const rings = ringsFor(highestSeat);
+    const n = rings.reduce((sum, ring) => sum + ring.n, 0);
+    if (n === stoolCount) return;
+    stoolCount = n;
+    const colours = Math.min(3, modelStools); // the model's stools go red, yellow, teal, red, …
+    let i = 0;
+    rings.forEach((ring, k) => {
+      const step = (2 * Math.PI) / ring.n;
+      const offset = k % 2 ? step / 2 : 0; // every other ring is turned half a stool, so stools don't hide behind each other
+      for (let j = 0; j < ring.n; j++, i++) {
+        let slot = slots[i];
+        const at = ring.own ? slot.home.a : offset + j * step;
+        const rt = ring.own ? slot.home.r : ring.r;
+        if (!slot) {
+          const like = slots[i % colours]; // same cushion colour as the seat number's
+          const node = like.node.clone(); // shares the geometry and materials
+          node.visible = false;
+          model.add(node);
+          slot = { node, a0: like.a0, q0: like.q0, home: null };
+          slots.push(slot);
+        }
+        if (!slot.node.visible) {
+          slot.node.visible = true;
+          Object.assign(slot, { a: at, r: rt, s: 0 }); // pops up in its place
+        }
+        Object.assign(slot, { at, rt, st: 1 });
+        placeStool(slot);
+      }
+    });
+    for (; i < slots.length; i++) slots[i].node.visible = false;
+    reachGoal = Math.max(baseReach, rings[rings.length - 1].r + stoolOverhang);
     if (reduceMotion.matches) settleStools();
+    else afterStoolsMoved();
     dirty = true;
     wake();
   }
@@ -363,18 +388,20 @@ function build(THREE, canvas, model, floorMap, handoff) {
   let view = null;
   let glide =
     handoff && !reduceMotion.matches
-      ? { from: { az: VIEWS.menu.azimuth, el: VIEWS.menu.elevation, ...handoff }, start: 0, delay: FADE_IN_MS, duration: VIEW.glide }
+      ? { from: { az: VIEWS.menu.azimuth, el: VIEWS.menu.elevation, sw: 1, ...handoff }, start: 0, delay: FADE_IN_MS, duration: VIEW.glide }
       : null;
   scene.fog = new THREE.Fog(roomColor, 1, 2); // the floor fades out behind the table (set in frameView)
 
   function placeCamera() {
-    const az = rad(view.az + swing.x * VIEW.swingX);
-    const el = rad(view.el + swing.y * VIEW.swingY);
+    const az = rad(view.az + swing.x * VIEW.swingX * view.sw);
+    const el = rad(Math.min(90, view.el + swing.y * VIEW.swingY * view.sw));
     camera.position.set(
       target.x + distance * Math.cos(el) * Math.sin(az),
       target.y + distance * Math.sin(el),
       target.z + distance * Math.cos(el) * Math.cos(az)
     );
+    // "Up" on screen is the far side of the table, which still works looking straight down.
+    camera.up.set(-Math.sin(az), 0, -Math.cos(az));
     camera.lookAt(target);
   }
 
@@ -422,6 +449,7 @@ function build(THREE, canvas, model, floorMap, handoff) {
       d: 1 / Math.sin(Math.atan(across * halfFov)),
       az: v.azimuth,
       el: v.elevation,
+      sw: v.swing,
     };
     if (resized && canvas.classList.contains('ready')) {
       updateFraming(performance.now());
@@ -461,7 +489,7 @@ function build(THREE, canvas, model, floorMap, handoff) {
     const p = Math.min(1, (now - glide.start) / (glide.duration * 1000));
     const e = p * p * (3 - 2 * p); // eases in and out
     const mix = (key) => glide.from[key] + (goal[key] - glide.from[key]) * e;
-    frameView({ fx: mix('fx'), fy: mix('fy'), d: mix('d'), az: mix('az'), el: mix('el') });
+    frameView({ fx: mix('fx'), fy: mix('fy'), d: mix('d'), az: mix('az'), el: mix('el'), sw: mix('sw') });
     if (p < 1) return true;
     glide = null;
     frameView(goal);
@@ -552,7 +580,7 @@ function build(THREE, canvas, model, floorMap, handoff) {
       const t = Date.now();
       sessionStorage.setItem(
         HANDOFF_KEY,
-        JSON.stringify({ t, fx: view.fx, fy: view.fy, d: view.d, az: view.az, el: view.el, sx: swing.x, sy: swing.y })
+        JSON.stringify({ t, fx: view.fx, fy: view.fy, d: view.d, az: view.az, el: view.el, sw: view.sw, sx: swing.x, sy: swing.y })
       );
       draw(); // the drawing buffer is only readable in the task that drew it
       const scale = Math.min(1, STILL_MAX_WIDTH / canvas.width);

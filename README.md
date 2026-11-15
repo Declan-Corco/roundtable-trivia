@@ -99,6 +99,7 @@ npm start
 
 - Host screen: **http://localhost:3000/host**
 - Players scan the QR code (phones must be on the **same Wi-Fi**). The QR code automatically uses your computer's network address, not "localhost".
+- No phones to hand? **http://localhost:3000/test** adds fake players to a lobby (enter the host's PIN). Each one can be disconnected, reconnected or removed. Put another server's address in **Server** (e.g. `https://round-table.site`) to fill a lobby there instead. The page is off on installed servers unless `TEST_PAGE=true` is set.
 
 > **Windows:** the first time, Windows Firewall may ask whether Node.js can accept connections. Allow it on **Private networks**, or phones won't be able to connect.
 
@@ -146,6 +147,14 @@ sudo bash server/setup.sh --uninstall
 ```
 
 **Updating:** from the folder you cloned, run `git pull && sudo bash server/setup.sh`. It doesn't ask any questions on an update. Your settings (domain, password) and any trivia sets you added on the server are kept.
+
+**Updating and changing settings from the website:** open **/admin** on your server (e.g. `https://trivia.example.com/admin`) and enter the admin password.
+
+- **Update now** pulls the latest commit from GitHub into the folder you cloned, reinstalls and restarts, and shows the output. This only works for a server installed from a `git clone`.
+- **Settings** edits `/etc/roundtable.env`: passwords, the Anthropic API key, the public address, player and game limits, the Table Takedown crowd and the test page. Passwords and keys only show as "set" or "not set". `PORT` and `HOST` aren't on the page, since a wrong value there would take the site offline.
+- Both restart the server, so the page warns you first if games are running.
+- The password is `UPDATE_PASSWORD`, or `HOST_PASSWORD` if that isn't set. With neither, the page stays locked.
+- How it works: the app runs as an unprivileged user, so the page only leaves a request file. Two small root services (`roundtable-update` and `roundtable-settings`), set up by the installer, pick it up. They write their results to `/var/lib/roundtable-admin/` (e.g. `update.log`), which the app can read but not change.
 
 ### Everyday commands
 
@@ -340,6 +349,7 @@ On Linux they're in `/etc/roundtable.env`. When running by hand, set them as env
 | `PORT` | `3000` | Port the app listens on. |
 | `PUBLIC_URL` | *(auto)* | Address in the QR code, e.g. `https://trivia.example.com`. |
 | `HOST_PASSWORD` | *(none)* | Password required to create games. |
+| `UPDATE_PASSWORD` | *(HOST_PASSWORD)* | Password for the admin page (`/admin`): updates and settings. |
 | `ALLOW_UPLOADS` | `true` | Let hosts upload their own trivia file. |
 | `MAX_PLAYERS` | `200` | Max players per game. |
 | `MAX_GAMES` | `50` | Max games running at once. |
