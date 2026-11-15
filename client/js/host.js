@@ -31,23 +31,26 @@
     }
     $('#setup-tagline').textContent = next ? 'Next game' : 'Set the table';
     $('#setup-note').hidden = !next;
-    $('#create-btn').textContent = next ? 'Back to the lobby' : 'Open the lobby';
     $('#cancel-setup').hidden = !(next && current.hasRound);
     showScreen('screen-setup');
     setStage({ view: 'menu' });
     $('#setup-error').textContent = '';
     try {
-      const [cfg, data] = await Promise.all([
-        fetch('/api/config').then((r) => r.json()),
-        fetch('/api/games').then((r) => r.json()),
-      ]);
+      const [cfg] = await Promise.all([fetch('/api/config').then((r) => r.json()), loadCatalog()]);
       $('#host-password').hidden = !cfg.needsPassword || next; // already hosting: no password needed
-      catalog = data.games;
       renderGames();
     } catch {
       $('#setup-error').textContent = 'Could not load the games from the server.';
     }
   }
+
+  async function loadCatalog() {
+    const data = await fetch('/api/games').then((r) => r.json());
+    catalog = data.games;
+    return catalog;
+  }
+
+  let opening = false; // a game card was pressed and its lobby is on the way
 
   function renderGames() {
     $('#game-list').replaceChildren(
@@ -58,9 +61,9 @@
           : g.kind === 'split' ? `question${n === 1 ? '' : 's'} to play`
           : g.kind === 'takedown' ? `prompt${n === 1 ? '' : 's'} to play`
           : `categor${n === 1 ? 'y' : 'ies'}`;
-        return el(
+        const card = el(
           'button',
-          { type: 'button', className: `game-card game-${g.id}`, onclick: () => openGame(g) },
+          { type: 'button', className: `game-card game-${g.id}`, onclick: () => openGame(g, card) },
           gameArt(g),
           el(
             'div',
@@ -71,6 +74,7 @@
           ),
           el('span', { className: 'go', 'aria-hidden': 'true' }, '→')
         );
+        return card;
       })
     );
   }
@@ -94,9 +98,8 @@
     return art;
   }
 
-  // ------------------------------------------------------------- setup: 2. categories & settings
-
-  function openGame(game) {
+  /** A game's categories and settings: what this host picked last time, or the game's defaults. */
+  function choiceFor(game) {
     const saved = (storage.get(localStorage, PREFS_KEY) || {})[game.id] || {};
     const known = new Set([...game.packs.map((p) => p.id), ...(game.online?.categories || []).map((c) => c.id)]);
     let packs = new Set((saved.packs || []).filter((p) => known.has(p)));
@@ -107,80 +110,177 @@
       const v = saved.settings?.[s.id];
       settings[s.id] = s.options.some((o) => o.value === v) ? v : s.default;
     }
-    choice = { game, packs, upload: null, custom: saved.custom || '', settings };
+    return { game, packs, upload: null, custom: saved.custom || '', settings };
+  }
 
+  function savePrefs(c) {
+    const prefs = storage.get(localStorage, PREFS_KEY) || {};
+    prefs[c.game.id] = { packs: [...c.packs], settings: c.settings, custom: c.custom };
+    storage.set(localStorage, PREFS_KEY, prefs);
+  }
+
+  /** The host's own prompts (Only One) or questions (Split Decision), one per line. */
+  const customList = (c) => (c.custom || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 50);
+
+  /** What the server needs to build a round from a choice (host:create / host:setup). */
+  const roundRequest = (c) => ({
+    game: c.game.id,
+    packs: [...c.packs],
+    customPrompts: c.game.customPrompts ? customList(c) : undefined,
+    customSet: c.upload?.data,
+    settings: c.settings,
+  });
+
+  /**
+   * Picking a game opens the lobby straight away, with the host's last choices (or the defaults);
+   * they're changed from the lobby's Settings button. For a table that's already open, the game
+   * loads as its next one.
+   */
+  async function openGame(game, card) {
+    if (opening) return;
+    const password = $('#host-password');
+    if (!password.hidden && !password.value) {
+      $('#setup-error').textContent = 'Enter the host password first.';
+      password.focus();
+      return;
+    }
+    const c = choiceFor(game);
+    const next = picking(); // the same table's next game, or a new table
+    opening = true;
+    $('#setup-error').textContent = '';
+    document.querySelectorAll('.game-card').forEach((b) => (b.disabled = true));
+    card.classList.add('opening');
+    card.querySelector('.count').textContent = 'Opening the lobby…';
+    const res = await request(socket, next ? 'host:setup' : 'host:create', { ...roundRequest(c), password: password.value }, 120000);
+    opening = false;
+    if (!res.ok) {
+      $('#setup-error').textContent = res.error;
+      renderGames();
+      return;
+    }
+    choice = c;
+    savePrefs(c);
+    // The server now sends the lobby. A new table also gets a session, so a refresh rejoins it.
+    if (!next) storage.set(sessionStorage, SESSION_KEY, { pin: res.pin, token: res.token });
+  }
+
+  $('#cancel-setup').addEventListener('click', () => send('host:cancel-setup'));
+
+  // ------------------------------------------------------------- setup: 2. lobby settings
+
+  // The settings window edits `draft`, a copy of `choice`; Save sends it to the server
+  // (host:setup reloads the round, everyone stays seated) and Cancel just drops it.
+  let draft = null;
+  const dialog = $('#settings-dialog');
+
+  async function openSettings() {
+    if (current?.phase !== 'lobby') return;
+    if (!catalog.length) await loadCatalog().catch(() => {});
+    if (!choice || choice.game.kind !== current.kind) {
+      // e.g. after a refresh: rebuild the choice for the game in this lobby from the saved prefs
+      const game = catalog.find((g) => g.kind === current.kind);
+      if (!game) return toast('Could not load the settings from the server.');
+      choice = choiceFor(game);
+    }
+    draft = { ...choice, packs: new Set(choice.packs), settings: { ...choice.settings } };
+    const { game } = draft;
     $('#settings-art').replaceWith(Object.assign(gameArt(game), { id: 'settings-art' }));
-    $('#settings-title').textContent = game.name;
-    $('#settings-desc').textContent = game.description;
+    $('#settings-game').textContent = game.name;
     $('#settings-error').textContent = '';
     $('#set-errors').replaceChildren(...game.errors.map((e) => el('div', {}, `⚠ Skipped ${e}`)));
+    $('#cat-drop').open = false;
     renderPacks();
     renderSettings();
     updateSummary();
-    showScreen('screen-settings');
+    dialog.showModal();
   }
 
-  /** One category to tick: an icon, its name and a line about it. */
-  function categoryCard({ id, icon, title, desc, meta }, i) {
-    const on = choice.packs.has(id);
+  $('#lobby-settings-btn').addEventListener('click', openSettings);
+  $('#settings-close').addEventListener('click', () => dialog.close());
+  $('#settings-cancel').addEventListener('click', () => dialog.close());
+
+  $('#settings-save').addEventListener('click', async () => {
+    const btn = $('#settings-save');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    $('#settings-error').textContent = '';
+    const res = await request(socket, 'host:setup', roundRequest(draft), 120000);
+    btn.textContent = 'Save changes';
+    btn.disabled = false;
+    if (!res.ok) {
+      $('#settings-error').textContent = res.error;
+      return;
+    }
+    choice = draft;
+    savePrefs(choice);
+    dialog.close();
+    toast('Lobby settings saved.');
+  });
+
+  /** One category in the dropdown: a tick box, its icon and name, and a line about it. */
+  function categoryRow({ id, icon, title, desc, meta }) {
     return el(
-      'button',
-      {
-        type: 'button',
-        className: 'cat-card' + (on ? ' selected' : ''),
-        'aria-pressed': String(on),
-        onclick: () => {
-          if (on) choice.packs.delete(id);
-          else choice.packs.add(id);
-          renderPacks();
+      'label',
+      { className: 'cat-row' },
+      el('input', {
+        type: 'checkbox',
+        checked: draft.packs.has(id),
+        onchange: (e) => {
+          if (e.target.checked) draft.packs.add(id);
+          else draft.packs.delete(id);
           updateSummary();
         },
-      },
-      el('span', { className: 'cat-icon', dataset: { i: i % 4 }, 'aria-hidden': 'true' }, icon),
-      el('span', { className: 'tick', 'aria-hidden': 'true' }, '✓'),
-      el('span', { className: 'cat-title' }, title),
-      desc ? el('span', { className: 'cat-desc' }, desc) : null,
-      meta ? el('span', { className: 'cat-meta' }, meta) : null
+      }),
+      el('span', { className: 'cat-row-icon', 'aria-hidden': 'true' }, icon),
+      el('span', { className: 'cat-row-text' }, el('span', { className: 'cat-row-title' }, title), desc ? el('span', { className: 'cat-row-desc' }, desc) : null),
+      meta ? el('span', { className: 'cat-row-meta' }, meta) : null
     );
   }
 
   function renderPacks() {
-    const { game, packs, upload } = choice;
-    const picked = packs.size + (upload ? 1 : 0);
-    $('#pack-hint').textContent = picked ? `${picked} picked · mix as many as you like` : 'Pick one or more to mix them';
-
-    const blocks = [];
+    const { game, upload } = draft;
     const online = game.online;
+    const all = [...(online?.categories || []).map((c) => c.id), ...game.packs.map((p) => p.id)];
+    const groups = [
+      el(
+        'div',
+        { className: 'cat-drop-tools' },
+        el('button', { type: 'button', className: 'link-btn', onclick: () => setAll(all) }, 'Select all'),
+        el('button', { type: 'button', className: 'link-btn', onclick: () => setAll([]) }, 'Clear')
+      ),
+    ];
     if (online) {
       // Popular Open Trivia DB categories (banked on the server); credited as its license requires.
-      blocks.push(
+      groups.push(
+        el('div', { className: 'cat-group' }, ...online.categories.map((c) => categoryRow({ id: c.id, icon: c.icon || '❓', title: c.title, desc: c.description }))),
         el(
-          'div',
-          { className: 'source' },
-          el(
-            'div',
-            { className: 'cat-grid' },
-            ...online.categories.map((c, i) => categoryCard({ id: c.id, icon: c.icon || '❓', title: c.title, desc: c.description }, i))
-          ),
-          el(
-            'p',
-            { className: 'credit-line' },
-            'Questions from ',
-            el('a', { href: online.url, target: '_blank', rel: 'noopener' }, online.name),
-            ', licensed ',
-            el('a', { href: online.licenseUrl, target: '_blank', rel: 'noopener' }, online.license),
-            '.'
-          )
+          'p',
+          { className: 'credit-line' },
+          'Questions from ',
+          el('a', { href: online.url, target: '_blank', rel: 'noopener' }, online.name),
+          ', licensed ',
+          el('a', { href: online.licenseUrl, target: '_blank', rel: 'noopener' }, online.license),
+          '.'
         )
       );
     }
+    if (game.packs.length) {
+      groups.push(
+        online ? el('h4', { className: 'cat-group-head' }, 'Your own questions') : null,
+        el(
+          'div',
+          { className: 'cat-group' },
+          ...game.packs.map((p) => categoryRow({ id: p.id, icon: p.icon || '📄', title: p.title, desc: p.description, meta: `${p.count} ${game.packNoun}` }))
+        )
+      );
+    }
+    $('#set-list').replaceChildren(...groups);
 
-    // Question files on this server, and an upload of your own
-    const files = game.packs.map((p, i) =>
-      categoryCard({ id: p.id, icon: p.icon || '📄', title: p.title, desc: p.description, meta: `${p.count} ${game.packNoun}` }, i)
-    );
-    const uploadRow = game.allowUpload
-      ? el(
+    // Below the dropdown: an uploaded question file, and the host's own prompts.
+    const extras = [];
+    if (game.allowUpload) {
+      extras.push(
+        el(
           'label',
           { className: 'upload-row' + (upload ? ' selected' : '') },
           el('input', { type: 'file', accept: '.json,application/json', onchange: onUpload }),
@@ -199,7 +299,7 @@
                   className: 'link-btn',
                   onclick: (e) => {
                     e.preventDefault();
-                    choice.upload = null;
+                    draft.upload = null;
                     renderPacks();
                     updateSummary();
                   },
@@ -208,149 +308,81 @@
               )
             : null
         )
-      : null;
-    if (files.length || uploadRow) {
-      blocks.push(
-        el(
-          'div',
-          { className: 'source' },
-          online ? el('h3', { className: 'source-head' }, 'Your own questions') : null,
-          files.length ? el('div', { className: 'cat-grid' }, ...files) : null,
-          uploadRow
-        )
       );
     }
     if (game.customPrompts) {
-      // Only One / Split Decision: the host's own prompts, one per line. They're played first, in order.
-      const box = el('textarea', {
-        className: 'input custom-prompts',
-        rows: 3,
-        maxLength: 3000,
-        placeholder: game.customPrompts.placeholder || '',
-        value: choice.custom,
-        oninput: (e) => {
-          choice.custom = e.target.value;
-          updateSummary();
-        },
-      });
-      blocks.push(
+      // Only One / Split Decision / Table Takedown: the host's own prompts, one per line, played first.
+      extras.push(
         el(
           'div',
-          { className: 'source' },
-          el('h3', { className: 'source-head' }, 'Write your own'),
-          el('p', { className: 'credit-line' }, game.customPrompts.help || 'One per line.'),
-          box
+          { className: 'sd-custom' },
+          el('label', { className: 'sd-label', htmlFor: 'custom-prompts' }, 'Write your own', el('small', {}, game.customPrompts.help || 'One per line.')),
+          el('textarea', {
+            id: 'custom-prompts',
+            className: 'input custom-prompts',
+            rows: 3,
+            maxLength: 3000,
+            placeholder: game.customPrompts.placeholder || '',
+            value: draft.custom,
+            oninput: (e) => {
+              draft.custom = e.target.value;
+              updateSummary();
+            },
+          })
         )
       );
     }
-    $('#set-list').replaceChildren(...blocks);
+    $('#set-extras').replaceChildren(...extras);
   }
 
-  /** A setting shown as a stepped slider (e.g. Manual · 10 sec · 30 sec · 1 min). */
-  function sliderSetting(s) {
-    const index = Math.max(0, s.options.findIndex((o) => o.value === choice.settings[s.id]));
-    const value = el('strong', { className: 'slider-value' }, s.options[index].label);
-    const marks = s.options.map((o, i) =>
-      el(
-        'button',
-        {
-          type: 'button',
-          className: 'slider-mark' + (i === index ? ' on' : ''),
-          onclick: () => {
-            input.value = String(i);
-            input.dispatchEvent(new Event('input'));
-          },
-        },
-        o.label
-      )
-    );
-    const input = el('input', {
-      type: 'range',
-      className: 'range setting-slider',
-      min: 0,
-      max: s.options.length - 1,
-      step: 1,
-      value: index,
-      'aria-label': s.label,
-      oninput: (e) => {
-        const i = Number(e.target.value);
-        choice.settings[s.id] = s.options[i].value;
-        value.textContent = s.options[i].label;
-        marks.forEach((m, k) => m.classList.toggle('on', k === i));
-        updateSummary();
-      },
-    });
-    input.style.setProperty('--steps', s.options.length - 1);
-    return el(
-      'div',
-      { className: 'setting' },
-      el('span', { className: 'setting-label slider-label' }, s.label, value, s.hint ? el('small', {}, s.hint) : null),
-      input,
-      el('div', { className: 'slider-marks' }, ...marks)
-    );
+  function setAll(ids) {
+    draft.packs = new Set(ids);
+    renderPacks();
+    updateSummary();
   }
 
+  /** Every setting is one row: its name (and a hint) on the left, a dropdown of its options on the right. */
   function renderSettings() {
     $('#settings-list').replaceChildren(
-      ...choice.game.settings.map((s) =>
-        s.slider
-          ? sliderSetting(s)
-          : el(
-          'div',
-          { className: 'setting' },
-          el('span', { className: 'setting-label' }, s.label, s.hint ? el('small', {}, s.hint) : null),
-          el(
-            'div',
-            { className: 'seg', role: 'group', 'aria-label': s.label },
-            ...s.options.map((o) =>
-              el(
-                'button',
-                {
-                  type: 'button',
-                  className: o.value === choice.settings[s.id] ? 'on' : '',
-                  'aria-pressed': String(o.value === choice.settings[s.id]),
-                  onclick: () => {
-                    choice.settings[s.id] = o.value;
-                    renderSettings();
-                    updateSummary();
-                  },
-                },
-                o.label
-              )
-            )
-          )
-        )
-      )
+      ...draft.game.settings.map((s) => {
+        const id = `setting-${s.id}`;
+        const select = el(
+          'select',
+          {
+            id,
+            className: 'input sd-select',
+            onchange: (e) => {
+              draft.settings[s.id] = s.options[Number(e.target.value)].value;
+              updateSummary();
+            },
+          },
+          ...s.options.map((o, i) => el('option', { value: String(i), selected: o.value === draft.settings[s.id] }, o.label))
+        );
+        return el('div', { className: 'sd-setting' }, el('label', { className: 'sd-label', htmlFor: id }, s.label, s.hint ? el('small', {}, s.hint) : null), select);
+      })
     );
   }
 
-  const onlineChosen = () => [...choice.packs].filter((id) => id.includes(':'));
-
-  /** The host's own prompts (Only One) or questions (Split Decision), one per line. */
-  const customList = () => (choice.custom || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 50);
-
   function updateSummary() {
-    const { game, packs, upload, settings } = choice;
-    const online = onlineChosen().length;
+    const { game, packs, upload, settings } = draft;
+    const onlinePicked = [...packs].filter((id) => id.includes(':')).length;
     const available =
-      game.packs.filter((p) => packs.has(p.id)).reduce((n, p) => n + p.count, 0) + (upload?.count || 0) + (game.customPrompts ? customList().length : 0);
+      game.packs.filter((p) => packs.has(p.id)).reduce((n, p) => n + p.count, 0) + (upload?.count || 0) + (game.customPrompts ? customList(draft).length : 0);
+    const picked = packs.size + (upload ? 1 : 0);
+    const total = (game.online?.categories.length || 0) + game.packs.length;
+    $('#pack-hint').textContent = picked ? `${packs.size} of ${total} picked${upload ? ' + your file' : ''}` : 'None picked';
     let text;
     if (game.kind === 'onlyone') {
       const playing = Math.min(settings.count, available);
       text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s each` : 'Pick a category, or write your own';
     } else if (game.kind === 'split') {
       const playing = Math.min(settings.count, available);
-      text = available
-        ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to pick, ${settings.guessTime}s to guess`
-        : 'Pick a question pack, or write your own';
+      text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to pick, ${settings.guessTime}s to guess` : 'Pick a question pack, or write your own';
     } else if (game.kind === 'takedown') {
       const playing = Math.min(settings.count, available);
-      text = available
-        ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to write, ${settings.voteTime}s to vote`
-        : 'Pick a prompt pack, or write your own';
-    } else if (online) {
-      const n = settings.count || 20;
-      text = `${n} questions · from ${choice.packs.size + (choice.upload ? 1 : 0)} categor${choice.packs.size + (choice.upload ? 1 : 0) === 1 ? 'y' : 'ies'}`;
+      text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to write, ${settings.voteTime}s to vote` : 'Pick a prompt pack, or write your own';
+    } else if (onlinePicked) {
+      text = `${settings.count || 20} questions · from ${picked} categor${picked === 1 ? 'y' : 'ies'}`;
     } else if (available) {
       const playing = settings.count ? Math.min(settings.count, available) : available;
       text = `${playing} question${playing === 1 ? '' : 's'}${playing < available ? ` from ${available}` : ''}`;
@@ -358,10 +390,8 @@
       text = 'Pick at least one category';
     }
     $('#round-summary').textContent = text;
-    $('#create-btn').disabled = !online && !available;
+    $('#settings-save').disabled = !onlinePicked && !available;
   }
-
-  $('#back-to-games').addEventListener('click', () => showScreen('screen-setup'));
 
   async function onUpload(e) {
     const file = e.target.files[0];
@@ -372,49 +402,13 @@
       if (file.size > 900_000) throw new Error('That file is too large (max ~900 KB).');
       const data = JSON.parse(await file.text());
       if (!Array.isArray(data.questions) || !data.questions.length) throw new Error('The file has no "questions" array.');
-      choice.upload = { data, title: data.title || file.name.replace(/\.json$/i, ''), count: data.questions.length };
+      draft.upload = { data, title: data.title || file.name.replace(/\.json$/i, ''), count: data.questions.length };
       renderPacks();
       updateSummary();
     } catch (err) {
       $('#settings-error').textContent = err instanceof SyntaxError ? `That file is not valid JSON: ${err.message}` : err.message;
     }
   }
-
-  $('#create-btn').addEventListener('click', async () => {
-    if (!choice) return;
-    const btn = $('#create-btn');
-    const label = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Opening…';
-    $('#settings-error').textContent = '';
-    const prefs = storage.get(localStorage, PREFS_KEY) || {};
-    prefs[choice.game.id] = { packs: [...choice.packs], settings: choice.settings, custom: choice.custom };
-    storage.set(localStorage, PREFS_KEY, prefs);
-    const next = picking(); // the same table's next game, or a new table
-    const res = await request(
-      socket,
-      next ? 'host:setup' : 'host:create',
-      {
-        game: choice.game.id,
-        packs: [...choice.packs],
-        customPrompts: choice.game.customPrompts ? customList() : undefined,
-        customSet: choice.upload?.data,
-        settings: choice.settings,
-        password: $('#host-password').value,
-      },
-      120000
-    );
-    btn.textContent = label;
-    btn.disabled = false;
-    if (!res.ok) {
-      $('#settings-error').textContent = res.error;
-      return;
-    }
-    // The server now sends the lobby. A new table also gets a session, so a refresh rejoins it.
-    if (!next) storage.set(sessionStorage, SESSION_KEY, { pin: res.pin, token: res.token });
-  });
-
-  $('#cancel-setup').addEventListener('click', () => send('host:cancel-setup'));
 
   // ------------------------------------------------------------- server events
 
@@ -497,6 +491,7 @@
     stopAuto?.();
     stopAuto = null;
     current = state;
+    if (dialog.open && (state.phase !== 'lobby' || state.choosing)) dialog.close(); // the lobby settings only apply in the lobby
     $('#end-btn').hidden = false;
     showTopPin(state);
     switch (state.phase) {

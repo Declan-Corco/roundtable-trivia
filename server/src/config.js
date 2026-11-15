@@ -52,6 +52,6 @@ module.exports = {
   // Table Takedown: lock the crowd filter for every host on this server (family, grownups or anything).
   // Empty = hosts pick (Family-friendly is the default).
   TAKEDOWN_FILTER: (process.env.TAKEDOWN_FILTER || '').trim().toLowerCase(),
-  MAX_PLAYERS: int('MAX_PLAYERS', 200),
+  MAX_PLAYERS: int('MAX_PLAYERS', 18), // 18 fills the lobby's first two rows of stools
   MAX_GAMES: int('MAX_GAMES', 50),
 };

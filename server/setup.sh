@@ -223,7 +223,7 @@ PUBLIC_URL=
 HOST_PASSWORD=
 # Allow hosts to upload their own trivia .json file from the host screen.
 ALLOW_UPLOADS=true
-MAX_PLAYERS=200
+MAX_PLAYERS=18
 # iOS app (optional): lets the Camera open join QR codes straight in the app.
 # Set to YOURTEAMID.site.round-table.app once the app is signed with a paid Apple Developer account.
 APPLE_APP_ID=

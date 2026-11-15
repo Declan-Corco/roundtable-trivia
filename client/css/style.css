@@ -1259,6 +1259,129 @@ button.td-card:hover { box-shadow: 0 0 0 2px var(--cream-deep), var(--shadow-car
 .rank-text { font-weight: 600; font-size: 1.2rem; max-width: 420px; }
 .final-rank { font-size: clamp(4rem, 22vw, 7rem); font-weight: 650; line-height: 1; animation: pop-in 0.6s ease; }
 
+/* ---------------------------------------------------------------- picking a game opens the lobby */
+.setup-password { display: block; max-width: 320px; margin: 0 auto 16px; font-size: 1.05rem; padding: 11px 14px; }
+.game-card:disabled { cursor: progress; }
+.game-card:disabled:not(.opening) { opacity: 0.55; transform: none; }
+.game-card.opening { box-shadow: 0 0 0 3px var(--teal), var(--shadow-card); }
+.game-card.opening .count { color: var(--teal-ink); }
+
+/* The lobby's Settings button, in the top corner of the guest-list panel */
+.lobby-settings-btn {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1.5px solid var(--cream-deep);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--brown-900);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lobby-settings-btn:hover { border-color: var(--muted); }
+.lobby-settings-btn:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- lobby settings: a window over the lobby
+   One column, so nothing has to squeeze: the categories in a dropdown of plain rows, then each
+   setting as one row with its name on the left and a dropdown on the right. */
+.settings-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: min(880px, calc(100dvh - 32px));
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--brown-900);
+  box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.settings-dialog[open] { display: flex; }
+.settings-dialog::backdrop { background: rgba(20, 12, 7, 0.6); }
+.sd-panel { display: flex; flex-direction: column; width: 100%; min-height: 0; margin: 0; }
+.sd-head { display: flex; align-items: center; gap: 14px; padding: 16px 20px; border-bottom: 1px solid var(--cream-deep); text-align: left; }
+.sd-head .game-art { zoom: 0.6; }
+.sd-titles { min-width: 0; }
+.sd-titles h2 { margin: 0; font-size: 1.35rem; font-weight: 650; }
+.sd-titles p { margin: 2px 0 0; }
+.sd-close {
+  margin-left: auto;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--cream);
+  color: var(--brown-900);
+  font-size: 1.05rem;
+  cursor: pointer;
+}
+.sd-close:hover { background: var(--cream-deep); }
+.sd-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 20px 20px; text-align: left; }
+.sd-section h3 { margin: 18px 0 10px; font-size: 0.8rem; font-weight: 650; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); }
+
+.cat-drop { border: 1.5px solid var(--cream-deep); border-radius: 12px; background: var(--white); }
+.cat-drop summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.cat-drop summary::-webkit-details-marker { display: none; }
+.cat-drop summary:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; border-radius: 10px; }
+.cat-drop-arrow { color: var(--muted); transition: transform 0.2s; }
+.cat-drop[open] .cat-drop-arrow { transform: rotate(180deg); }
+.cat-drop[open] summary { border-bottom: 1px solid var(--cream-deep); }
+.cat-drop-body { max-height: min(340px, 45dvh); overflow-y: auto; padding: 4px 8px 10px; }
+.cat-drop-tools { display: flex; justify-content: flex-end; gap: 16px; padding: 6px 6px 4px; }
+.cat-group-head { margin: 12px 8px 4px; font-size: 0.78rem; font-weight: 650; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); }
+.cat-row { display: flex; align-items: center; gap: 12px; padding: 9px 8px; border-radius: 10px; cursor: pointer; }
+.cat-row:hover { background: var(--paper); }
+.cat-row input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--teal); }
+.cat-row-icon { flex: none; width: 1.6em; font-size: 1.3rem; text-align: center; }
+.cat-row-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.cat-row-title { font-weight: 600; }
+.cat-row-desc { font-size: 0.88rem; color: var(--ink-soft); }
+.cat-row-meta { flex: none; font-size: 0.85rem; color: var(--ink-soft); }
+.cat-drop .credit-line { margin: 6px 8px 0; font-size: 0.8rem; }
+#set-extras > * { margin-top: 12px; }
+.sd-custom { display: flex; flex-direction: column; gap: 8px; }
+.sd-custom .custom-prompts { font-size: 1rem; text-align: left; }
+
+.sd-settings { display: flex; flex-direction: column; }
+.sd-setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 0; border-top: 1px solid var(--cream-deep); }
+.sd-setting:first-child { border-top: 0; padding-top: 0; }
+.sd-label { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-weight: 600; }
+.sd-label small { font-size: 0.85rem; font-weight: 500; color: var(--ink-soft); }
+.sd-select {
+  width: auto;
+  min-width: 10em;
+  max-width: 55%;
+  flex: none;
+  padding: 9px 38px 9px 12px;
+  font-size: 1rem;
+  text-align: left;
+  background: var(--white) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%236e4c39' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center / 12px 8px;
+  appearance: none;
+  cursor: pointer;
+}
+@media (max-width: 480px) {
+  .sd-setting { flex-direction: column; align-items: stretch; gap: 6px; }
+  .sd-select { width: 100%; max-width: none; }
+}
+
+.sd-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 14px 20px; border-top: 1px solid var(--cream-deep); background: var(--white); text-align: left; }
+.sd-foot .round-summary { flex: 1 1 auto; font-weight: 600; }
+.sd-foot .error { order: 3; flex-basis: 100%; }
+.sd-foot .error:empty { display: none; }
+.sd-buttons { display: flex; gap: 10px; margin-left: auto; }
+
 /* ================================================================= THE ROOM
    The menus (the landing page, the host's "Pick a game" and settings screens, the join screen)
    sit in a dark, warm room: <body class="room">, which common.js sets while a screen marked
@@ -1394,6 +1517,7 @@ html:not(.no-scene) .room .settings-head p,
 html:not(.no-scene) .room .back-link { color: var(--room-ink-soft); }
 html:not(.no-scene) .room .back-link:hover { color: var(--room-ink); }
 html:not(.no-scene) .room .setup > .error { color: var(--room-error); }
+html:not(.no-scene) .room .setup > .link-btn { color: var(--room-ink-soft); }
 html:not(.no-scene) .room .game-card,
 html:not(.no-scene) .room .setup-panel { box-shadow: var(--shadow-room); }
 html:not(.no-scene) .room .game-card:hover { box-shadow: 0 0 0 3px var(--yellow), var(--shadow-room); }

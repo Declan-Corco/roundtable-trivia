@@ -351,7 +351,7 @@ On Linux they're in `/etc/roundtable.env`. When running by hand, set them as env
 | `HOST_PASSWORD` | *(none)* | Password required to create games. |
 | `UPDATE_PASSWORD` | *(HOST_PASSWORD)* | Password for the admin page (`/admin`): updates and settings. |
 | `ALLOW_UPLOADS` | `true` | Let hosts upload their own trivia file. |
-| `MAX_PLAYERS` | `200` | Max players per game. |
+| `MAX_PLAYERS` | `18` | Max players per game. |
 | `MAX_GAMES` | `50` | Max games running at once. |
 | `APPLE_APP_ID` | *(none)* | iOS app ID (`TEAMID.site.round-table.app`) so scanning the QR code opens the app. See [ios/README.md](ios/README.md). |
 | `TRIVIA_DIR` | `server/trivia` | Where trivia sets are loaded from. |

@@ -49,47 +49,53 @@
       <span class="tagline" id="setup-tagline">Set the table</span>
       <h1>Pick a game</h1>
       <p class="muted" id="setup-note" hidden>Everyone stays seated. Scores start fresh with the next game.</p>
+      <input class="input setup-password" type="password" id="host-password" placeholder="Host password" autocomplete="current-password" aria-label="Host password" hidden>
       <div class="game-grid" id="game-list"></div>
+      <button class="link-btn quiet" id="cancel-setup" type="button" hidden>Keep the current game</button>
       <p class="error" id="setup-error"></p>
     </div>
   </section>
 
-  <!-- 1b. The chosen game's categories and settings -->
-  <section class="screen setup-screen" id="screen-settings" data-room hidden>
-    <div class="setup setup-wide">
-      <button class="back-link" id="back-to-games" type="button">← All games</button>
-      <div class="settings-head">
+  <!-- 1b. Lobby settings: the game's categories and settings, opened from the lobby's Settings button.
+       Picking a game opens the lobby straight away with the last choices (or the defaults). -->
+  <dialog class="settings-dialog" id="settings-dialog" aria-labelledby="settings-title">
+    <form method="dialog" class="sd-panel" id="settings-form">
+      <header class="sd-head">
         <div class="game-art" id="settings-art" aria-hidden="true"></div>
-        <div class="settings-intro">
-          <h1 id="settings-title"></h1>
-          <p class="muted" id="settings-desc"></p>
+        <div class="sd-titles">
+          <h2 id="settings-title">Lobby settings</h2>
+          <p class="muted" id="settings-game"></p>
         </div>
-      </div>
+        <button class="sd-close" id="settings-close" type="button" aria-label="Close without saving">✕</button>
+      </header>
 
-      <div class="setup-body">
-        <div class="settings-block">
-          <div class="block-head">
-            <h2>Categories</h2>
-            <span class="muted" id="pack-hint">Pick one or more to mix them</span>
-          </div>
-          <div class="pack-list" id="set-list"></div>
+      <div class="sd-body">
+        <section class="sd-section">
+          <h3>Categories</h3>
+          <details class="cat-drop" id="cat-drop">
+            <summary><span id="pack-hint">Pick one or more</span><span class="cat-drop-arrow" aria-hidden="true">▾</span></summary>
+            <div class="cat-drop-body" id="set-list"></div>
+          </details>
+          <div id="set-extras"></div>
           <div class="set-errors" id="set-errors"></div>
-        </div>
+        </section>
 
-        <aside class="setup-panel">
-          <h2>Settings</h2>
-          <div class="settings-grid" id="settings-list"></div>
-          <div class="setup-actions">
-            <span class="round-summary" id="round-summary"></span>
-            <input class="input" type="password" id="host-password" placeholder="Host password" autocomplete="current-password" hidden>
-            <button class="btn btn-primary btn-big btn-block" id="create-btn" type="button" disabled>Open the lobby</button>
-            <button class="link-btn quiet" id="cancel-setup" type="button" hidden>Keep the current game</button>
-            <p class="error" id="settings-error"></p>
-          </div>
-        </aside>
+        <section class="sd-section">
+          <h3>Settings</h3>
+          <div class="sd-settings" id="settings-list"></div>
+        </section>
       </div>
-    </div>
-  </section>
+
+      <footer class="sd-foot">
+        <span class="round-summary" id="round-summary"></span>
+        <p class="error" id="settings-error"></p>
+        <div class="sd-buttons">
+          <button class="btn" id="settings-cancel" type="button">Cancel</button>
+          <button class="btn btn-primary" id="settings-save" type="button">Save changes</button>
+        </div>
+      </footer>
+    </form>
+  </dialog>
 
   <!-- 2. Lobby: the table fills up as guests join -->
   <section class="screen lobby-screen" id="screen-lobby" data-room hidden>
@@ -105,6 +111,7 @@
         </div>
       </div>
       <aside class="lobby-side" data-scene-avoid>
+        <button class="lobby-settings-btn" id="lobby-settings-btn" type="button"><span aria-hidden="true">⚙</span> Settings</button>
         <div class="join-card">
           <img id="qr" alt="QR code to join the game">
           <div class="join-text">

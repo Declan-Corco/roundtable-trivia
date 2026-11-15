@@ -25,7 +25,7 @@ const SETTINGS = [
   { key: 'HOST_PASSWORD', label: 'Host password', secret: true, hint: 'Asked for before creating a game. Also opens this page if no update password is set.' },
   { key: 'UPDATE_PASSWORD', label: 'Admin password', secret: true, hint: 'Opens this page. Empty = use the host password.' },
   { key: 'ALLOW_UPLOADS', label: 'Trivia uploads', type: 'bool', hint: 'Hosts can upload their own trivia file.' },
-  { key: 'MAX_PLAYERS', label: 'Max players per game', type: 'number' },
+  { key: 'MAX_PLAYERS', label: 'Max players per game', type: 'number', hint: 'Empty = 18.' },
   { key: 'MAX_GAMES', label: 'Max games at once', type: 'number' },
   { key: 'ANTHROPIC_API_KEY', label: 'Anthropic API key', secret: true, hint: 'Turns on the Claude check (Only One) and moderation (Table Takedown).' },
   { key: 'AI_CHECK_MODEL', label: 'Claude check model', hint: 'Empty = claude-haiku-5-5.' },
