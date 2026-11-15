@@ -29,7 +29,10 @@ const VIEW = {
   ease: 0.35, // seconds for the camera to catch up with the pointer
   glide: 1.1, // seconds the table takes to glide from where the last page had it to its place here
   stageGlide: 1.4, // seconds to move between the menu view and the lobby's view over the table
+  reframe: 0.7, // seconds (roughly) for the camera to ease to a new framing, e.g. after a window resize
 };
+// Size changes smaller than this (in px) don't re-frame the table, e.g. a scrollbar appearing.
+const RESIZE_SLACK = 60;
 // Where the camera stands for each stage: azimuth is around the table (0 = seat 1 at the top of
 // the screen), elevation is how far above the horizon it looks down from, both in degrees; fill is
 // how much of the free area the table and stools take up; swing is how much the pointer moves the
@@ -396,6 +399,7 @@ function build(THREE, canvas, model, floorMap, handoff) {
   // rest of it: re-framing for each screen's layout (bets, "Get ready", question) looked like a
   // jumpy zoom. { w, h, goal }, reset when the game ends or the window changes size.
   let gameFraming = null;
+  let framedSize = null; // { w, h } the last framing was worked out for
   let glide =
     handoff && !reduceMotion.matches
       ? { from: { az: VIEWS.menu.azimuth, el: VIEWS.menu.elevation, sw: 1, ...handoff }, start: 0, delay: FADE_IN_MS, duration: VIEW.glide }
@@ -417,6 +421,9 @@ function build(THREE, canvas, model, floorMap, handoff) {
 
   /** The flat table this screen would show (data-scene-table), if any: the 3D one takes its place. */
   const tableAnchor = () => [...document.querySelectorAll('[data-scene-table]')].find((n) => n.offsetParent);
+  /** The panel this screen keeps the table clear of (data-scene-avoid), if any. */
+  const avoidPanel = () => [...document.querySelectorAll('[data-scene-avoid]')].find((n) => n.offsetParent);
+  const sameSize = (s, w, h) => !!s && Math.abs(s.w - w) < RESIZE_SLACK && Math.abs(s.h - h) < RESIZE_SLACK;
 
   /**
    * The part of the window the table should sit in: the flat table's place on a game screen, or
@@ -429,7 +436,7 @@ function build(THREE, canvas, model, floorMap, handoff) {
       const r = anchor.getBoundingClientRect();
       if (r.width > 40 && r.height > 40) return { x: r.left, y: r.top, w: r.width, h: r.height };
     }
-    const panel = [...document.querySelectorAll('[data-scene-avoid]')].find((n) => n.offsetParent);
+    const panel = avoidPanel();
     if (!panel) return whole;
     const r = panel.getBoundingClientRect();
     const top = r.top + scrollY; // where the panel sits before any scrolling
@@ -459,8 +466,11 @@ function build(THREE, canvas, model, floorMap, handoff) {
     camera.aspect = w / h;
 
     const v = VIEWS[stage.view];
-    if (stage.view === 'table' && gameFraming && gameFraming.w === w && gameFraming.h === h) {
+    const anchor = tableAnchor();
+    if (stage.view === 'table' && sameSize(gameFraming, w, h)) {
       goal = gameFraming.goal;
+    } else if (stage.view !== 'menu' && goal && !anchor && !avoidPanel() && sameSize(framedSize, w, h)) {
+      // A screen with nothing to frame the table by ("Get ready", the standings): the camera stays put.
     } else {
       const area = freeArea(w, h);
       const halfFov = Math.tan(rad(VIEW.fov) / 2);
@@ -475,7 +485,8 @@ function build(THREE, canvas, model, floorMap, handoff) {
         el: v.elevation,
         sw: v.swing,
       };
-      gameFraming = stage.view === 'table' && tableAnchor() ? { w, h, goal } : null;
+      gameFraming = stage.view === 'table' && anchor ? { w, h, goal } : null;
+      framedSize = { w, h };
     }
     if (resized && canvas.classList.contains('ready')) {
       updateFraming(performance.now());
@@ -500,12 +511,27 @@ function build(THREE, canvas, model, floorMap, handoff) {
     scene.fog.far = distance + reach * 9;
   }
 
-  /** Moves the framing towards the goal; true while it is still gliding there. */
-  function updateFraming(now) {
+  const FRAMING_KEYS = ['fx', 'fy', 'd', 'az', 'el', 'sw'];
+
+  /** Moves the framing towards the goal; true while it is still moving there. */
+  function updateFraming(now, dt = 0) {
     if (!goal) return false;
     if (!glide) {
-      frameView(goal);
-      return false;
+      // Any other change of framing (a resize, a different screen) eases there instead of jumping.
+      if (!view || reduceMotion.matches) {
+        frameView(goal);
+        return false;
+      }
+      const k = 1 - Math.exp(-dt / VIEW.reframe);
+      const next = {};
+      let moving = false;
+      for (const key of FRAMING_KEYS) {
+        const gap = (goal[key] ?? 0) - (view[key] ?? 0);
+        if (Math.abs(gap) > (key === 'az' || key === 'el' ? 0.01 : 0.0005)) moving = true;
+        next[key] = (view[key] ?? 0) + gap * k;
+      }
+      frameView(moving ? next : goal);
+      return moving;
     }
     if (!glide.start) glide.start = now + glide.delay; // e.g. hold the old framing while fading in over the still
     if (now < glide.start) {
@@ -689,7 +715,7 @@ function build(THREE, canvas, model, floorMap, handoff) {
       swing.y += dy * k;
     }
     const stoolsMoving = easeStools(dt);
-    const gliding = updateFraming(now);
+    const gliding = updateFraming(now, dt);
     const moving = swinging || stoolsMoving || gliding;
     // The idle drift is slow enough that 30 frames a second is plenty (kinder to phone batteries).
     const due = !drifting() || gliding || stoolsMoving || now - lastDraw > 30;
