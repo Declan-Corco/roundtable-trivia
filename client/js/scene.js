@@ -458,6 +458,18 @@ function build(THREE, canvas, model, floorMap, handoff) {
     camera.aspect = w / h;
 
     const v = VIEWS[stage.view];
+    // A table spot marked data-scene-keep (the bets screen) doesn't re-frame the camera in a game
+    // that's already under way: it stays where it was, unless the window really changed size.
+    const keep = tableAnchor()?.hasAttribute('data-scene-keep');
+    if (keep && goal?.stage === 'table' && stage.view === 'table' && Math.abs(goal.w - w) < 60 && Math.abs(goal.h - h) < 60) {
+      if (resized && canvas.classList.contains('ready')) {
+        updateFraming(performance.now());
+        draw();
+      }
+      dirty = true;
+      wake();
+      return;
+    }
     const area = freeArea(w, h);
     const halfFov = Math.tan(rad(VIEW.fov) / 2);
     const across = (Math.min(area.w, area.h) * v.fill) / h; // of the window's height
@@ -470,6 +482,9 @@ function build(THREE, canvas, model, floorMap, handoff) {
       az: v.azimuth,
       el: v.elevation,
       sw: v.swing,
+      stage: stage.view, // what it was worked out for (see data-scene-keep above)
+      w,
+      h,
     };
     // A real change of framing (another screen's layout, a resize) glides there from where the
     // camera is now, rather than jumping. Tiny changes (a scrollbar appearing) just ease in.
