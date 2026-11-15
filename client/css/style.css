@@ -1416,7 +1416,40 @@ html:not(.no-scene) .room .scene-canvas { display: block; }
 .scene-canvas.ready { opacity: 1; }           /* fades in once the model is on screen */
 .scene-canvas.scene-arriving { transition-duration: 0.5s; } /* arriving from a page that had the scene: it glides in */
 .host .scene-canvas.ready { opacity: 0.38; }  /* dimmed behind the setup screens */
-.host:has(#screen-lobby:not([hidden])) .scene-canvas.ready { opacity: 1; } /* the lobby's table: full light */
+/* the lobby's and the game screens' table: full light */
+.host:has(#screen-lobby:not([hidden]), #screen-wager:not([hidden]), #screen-question:not([hidden]), #screen-oo:not([hidden])) .scene-canvas.ready { opacity: 1; }
+.host:has(#screen-intro:not([hidden])) .scene-labels { display: none; } /* "Get ready": just the dimmed room behind the question */
+
+/* Game screens (bets, questions, Only One): the 3D table takes the flat table's place
+   (data-scene-table), its stools carry the seats, and the timer ring and countdown sit on its
+   top. js/scene.js sets --tx/--ty (the tabletop's centre in the flat table's box) and --tr (its radius). */
+html:not(.no-scene) .room:is(.host) :is(#screen-wager, #screen-intro, #screen-question, #screen-oo) { color: var(--room-ink); }
+html:not(.no-scene) .room :is(#screen-wager, #screen-question, #screen-oo) :is(.q-hint, .w-rules, .q-foot) { color: var(--room-ink-soft); }
+html:not(.no-scene) .room :is(#screen-wager, #screen-oo) .tagline { color: var(--room-ink); }
+html:not(.no-scene) .room #screen-wager .chip { color: var(--brown-900); } /* cream chips keep dark text */
+html.scene-live:not(.no-scene) .room [data-scene-table] .seats { visibility: hidden; }
+html.scene-live:not(.no-scene) .room [data-scene-table] .tabletop {
+  inset: auto;
+  left: calc(var(--tx, 50%) - var(--tr, 30%));
+  top: calc(var(--ty, 50%) - var(--tr, 30%));
+  width: calc(var(--tr, 30%) * 2);
+  height: calc(var(--tr, 30%) * 2);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  text-shadow: 0 2px 10px rgba(30, 15, 5, 0.75);
+}
+html.scene-live:not(.no-scene) .room [data-scene-table] .tabletop::before { display: none; }
+html.scene-live:not(.no-scene) .room [data-scene-table].low .tabletop { background: rgba(240, 78, 55, 0.6); }
+html.scene-live:not(.no-scene) .room .q-stage.revealed [data-scene-table] .tabletop { background: rgba(19, 173, 159, 0.7); }
+html.scene-live:not(.no-scene) .room [data-scene-table] .ring { /* just inside the tabletop's rim */
+  inset: auto;
+  left: calc(var(--tx, 50%) - var(--tr, 30%) * 1.02);
+  top: calc(var(--ty, 50%) - var(--tr, 30%) * 1.02);
+  width: calc(var(--tr, 30%) * 2.04);
+  height: calc(var(--tr, 30%) * 2.04);
+}
+html.scene-live:not(.no-scene) .room [data-scene-table] .ring-track { stroke: rgba(255, 253, 249, 0.22); }
 
 /* The lobby: the 3D table stands in for the flat one (which keeps its space, so the guest list
    stays put), with the PIN on the tabletop and each guest's name over their stool (js/scene.js). */
@@ -1473,6 +1506,11 @@ body:not(.room) .scene-labels { display: none; }
   animation: pop-in 0.35s ease;
 }
 .scene-tag.away .scene-tag-body { opacity: 0.5; }
+.scene-tag.done .scene-tag-body { box-shadow: 0 0 0 3px var(--teal), 0 4px 12px -2px rgba(0, 0, 0, 0.55); }
+.seat-no.ans-c0 { background: var(--a0); }
+.seat-no.ans-c1 { background: var(--a1); }
+.seat-no.ans-c2 { background: var(--a2); }
+.seat-no.ans-c3 { background: var(--a3); }
 .scene-tag-name { overflow: hidden; text-overflow: ellipsis; }
 
 /* Arriving from another page that had the scene: a still picture of it, left by that page

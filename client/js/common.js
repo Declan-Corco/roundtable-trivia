@@ -165,6 +165,24 @@
       node.style.fontSize = `${Math.round(dot * 0.42)}px`;
     });
     container._occupants = now;
+
+    // On a game screen with the 3D scene, the table is the model (js/scene.js): the same seats go
+    // to its stools as name tags. Only for the screen showing (this also runs on window resizes).
+    if (container.offsetParent && container.closest('[data-scene-table]')) {
+      setStage({
+        view: 'table',
+        seats: items.map((it) => ({
+          id: it.id,
+          seat: it.seat,
+          name: it.name,
+          color: seatColor(it.seat),
+          label: it.label,
+          answer: /\bc([0-3])\b/.exec(it.cls || '')?.[1] ?? null, // on a reveal: the answer they picked
+          dim: /\b(waiting|typing|none|away)\b/.test(it.cls || ''), // hasn't answered (or isn't here)
+          done: /\bin\b/.test(it.cls || ''),
+        })),
+      });
+    }
   }
   window.addEventListener('resize', () => {
     document.querySelectorAll('.seats').forEach((c) => c._seatArgs && renderSeats(c, ...c._seatArgs));

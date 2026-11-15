@@ -37,6 +37,9 @@ const VIEW = {
 const VIEWS = {
   menu: { azimuth: 28, elevation: 33, fill: 0.8, swing: 1 },
   lobby: { azimuth: 0, elevation: 90, fill: 0.9, swing: 0 }, // straight down over the table, seat 1 at the top
+  // In a game (bets, questions, Only One): the same view, framed into the flat table's place on the
+  // screen (an element marked data-scene-table), with the timer laid over the tabletop.
+  table: { azimuth: 0, elevation: 90, fill: 1, swing: 0 },
 };
 // Going from one page with the scene to another (landing → host and back), the old page leaves its
 // framing here, and the new one starts from it and glides to its own, so the table moves across
@@ -408,9 +411,20 @@ function build(THREE, canvas, model, floorMap, handoff) {
     camera.lookAt(target);
   }
 
-  /** The part of the window the table should sit in: the biggest area clear of the menu panel. */
+  /** The flat table this screen would show (data-scene-table), if any: the 3D one takes its place. */
+  const tableAnchor = () => [...document.querySelectorAll('[data-scene-table]')].find((n) => n.offsetParent);
+
+  /**
+   * The part of the window the table should sit in: the flat table's place on a game screen, or
+   * else the biggest area clear of the menu panel.
+   */
   function freeArea(w, h) {
     const whole = { x: 0, y: 0, w, h };
+    const anchor = tableAnchor();
+    if (anchor) {
+      const r = anchor.getBoundingClientRect();
+      if (r.width > 40 && r.height > 40) return { x: r.left, y: r.top, w: r.width, h: r.height };
+    }
     const panel = [...document.querySelectorAll('[data-scene-avoid]')].find((n) => n.offsetParent);
     if (!panel) return whole;
     const r = panel.getBoundingClientRect();
@@ -503,7 +517,7 @@ function build(THREE, canvas, model, floorMap, handoff) {
   function applyStage(next) {
     const before = stage.view;
     stage = next && VIEWS[next.view] ? next : { view: 'menu' };
-    const seats = stage.view === 'lobby' ? stage.seats || [] : [];
+    const seats = stage.view === 'menu' ? [] : stage.seats || [];
     setStoolCount(Math.max(0, ...seats.map((p) => p.seat || 0)));
     updateLabels(seats);
     // Moving between the menu and the lobby: the camera glides from where it is to the new view.
@@ -515,8 +529,10 @@ function build(THREE, canvas, model, floorMap, handoff) {
   document.addEventListener('roundtable:stage', (e) => applyStage(e.detail));
 
   function updateLabels(seats) {
-    labels.hidden = stage.view !== 'lobby';
+    labels.hidden = stage.view === 'menu';
     if (labels.hidden) return;
+    // The PIN plate is the lobby's; in a game the screen's own timer sits on the table instead.
+    pinPlate.hidden = stage.view !== 'lobby';
     labels.querySelector('.scene-pin-code').textContent = (stage.pin || '').replace(/(\d{3})(\d{3})/, '$1 $2');
     labels.querySelector('.scene-pin-title').textContent = stage.title || '';
     const seen = new Set();
@@ -531,10 +547,13 @@ function build(THREE, canvas, model, floorMap, handoff) {
         tags.set(p.id, tag);
       }
       tag.dataset.seat = p.seat;
-      tag.classList.toggle('away', !p.connected);
+      // In the lobby, faded = disconnected. In a game: faded = hasn't answered yet, outlined = in,
+      // and on a reveal the badge takes the colour of the answer picked (like the flat seats).
+      tag.classList.toggle('away', p.connected === false || !!p.dim);
+      tag.classList.toggle('done', !!p.done);
       const no = tag.querySelector('.seat-no');
-      no.className = `seat-no s-${p.color || 'red'}`;
-      no.textContent = p.seat;
+      no.className = p.answer != null ? `seat-no ans-c${p.answer}` : `seat-no s-${p.color || 'red'}`;
+      no.textContent = p.label ?? p.seat;
       tag.querySelector('.scene-tag-name').textContent = p.name;
     }
     for (const [id, tag] of tags) {
@@ -555,8 +574,17 @@ function build(THREE, canvas, model, floorMap, handoff) {
     if (labels.hidden) return;
     const [px, py] = onPage(centre.x, tableTop, centre.z);
     const [ex, ey] = onPage(centre.x + tableRadius, tableTop, centre.z);
-    labels.style.setProperty('--table-r', `${Math.hypot(ex - px, ey - py).toFixed(1)}px`); // sizes the PIN to the table
+    const tr = Math.hypot(ex - px, ey - py);
+    labels.style.setProperty('--table-r', `${tr.toFixed(1)}px`); // sizes the PIN to the table
     pinPlate.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
+    // A game screen's timer and countdown are laid over the tabletop: tell its flat table where that is.
+    const anchor = stage.view === 'table' && tableAnchor();
+    if (anchor) {
+      const r = anchor.getBoundingClientRect();
+      anchor.style.setProperty('--tx', `${(px - r.left).toFixed(1)}px`);
+      anchor.style.setProperty('--ty', `${(py - r.top).toFixed(1)}px`);
+      anchor.style.setProperty('--tr', `${tr.toFixed(1)}px`);
+    }
     for (const tag of tags.values()) {
       const slot = slots[tag.dataset.seat - 1];
       if (!slot || !slot.node.visible) {
@@ -692,7 +720,7 @@ function build(THREE, canvas, model, floorMap, handoff) {
   // the lobby's guest list appearing).
   const resized = new ResizeObserver(() => fit());
   resized.observe(canvas);
-  document.querySelectorAll('[data-scene-avoid]').forEach((n) => resized.observe(n));
+  document.querySelectorAll('[data-scene-avoid], [data-scene-table]').forEach((n) => resized.observe(n));
 
   canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
   canvas.addEventListener('webglcontextrestored', () => {
