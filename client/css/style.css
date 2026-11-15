@@ -1463,6 +1463,26 @@ html.scene-live:not(.no-scene) .room [data-scene-table] .ring { /* just inside t
   height: calc(var(--tr, 30%) * 2.04);
 }
 html.scene-live:not(.no-scene) .room [data-scene-table] .ring-track { stroke: rgba(255, 253, 249, 0.22); }
+/* Only the countdown stays on the tabletop; the status line ("0 of 5 bets in") goes under the
+   lowest stool (--tb, from js/scene.js), where it has room. */
+html.scene-live:not(.no-scene) .room [data-scene-table] .tabletop .tt-sub {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + var(--tb, 70%) + 10px);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: min(90vw, 700px);
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(27, 17, 11, 0.55);
+  color: var(--room-ink);
+  font-size: clamp(1rem, 1.5vw, 1.3rem);
+  font-weight: 600;
+  opacity: 1;
+}
+/* With no answer columns beside it, the bets and Only One table can use more of the screen. */
+html.scene-live:not(.no-scene) .room #w-table { width: clamp(200px, min(64vw, calc(100dvh - 400px)), 760px); }
+html.scene-live:not(.no-scene) .room #oo-table { width: clamp(200px, min(64vw, calc(100dvh - 340px)), 780px); }
 
 /* The lobby: the 3D table stands in for the flat one (which keeps its space, so the guest list
    stays put), with the PIN on the tabletop and each guest's name over their stool (js/scene.js). */
@@ -1513,7 +1533,7 @@ body:not(.room) .scene-labels { display: none; }
   border-radius: 999px;
   background: var(--white);
   color: var(--brown-900);
-  font-size: clamp(0.85rem, 1.2vw, 1.15rem);
+  font-size: calc(clamp(0.85rem, 1.2vw, 1.15rem) * var(--tag-scale, 1)); /* smaller when stools are crowded */
   font-weight: 600;
   box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.55);
   animation: pop-in 0.35s ease;

@@ -531,9 +531,10 @@ function build(THREE, canvas, model, floorMap, handoff) {
     // The view's fill already leaves a margin; on top of that, a little room above for the name tag
     // that hangs over the top stool (proportional, so a small table spot isn't eaten up). Tags may
     // overhang the sides. Always the same, so the framing doesn't change when someone sits down.
+    // Below, room for the line a game screen shows under the table ("0 of 5 bets in").
     const padX = 0;
     const padTop = Math.min(40, area.h * 0.08);
-    const padBottom = 0;
+    const padBottom = Math.min(36, area.h * 0.07);
     const room = { w: Math.max(40, area.w * v.fill - 2 * padX), h: Math.max(40, area.h * v.fill - padTop - padBottom) };
     // From this far above the stool tops, the visible height there is 2·dist·tan(fov/2), which fills h px.
     const dist = (Math.max((maxX - minX) / room.w, (maxZ - minZ) / room.h) * h) / (2 * Math.tan(rad(VIEW.fov) / 2));
@@ -663,6 +664,9 @@ function build(THREE, canvas, model, floorMap, handoff) {
     const [ex, ey] = onPage(centre.x + tableRadius, tableTop, centre.z);
     const tr = Math.hypot(ex - px, ey - py);
     labels.style.setProperty('--table-r', `${tr.toFixed(1)}px`); // sizes the PIN to the table
+    // Name tags shrink when stools are close together on screen (lots of players, a small table spot).
+    const spacingPx = ((2 * Math.PI * baseRing) / Math.max(1, modelStools)) * (tr / tableRadius);
+    labels.style.setProperty('--tag-scale', Math.min(1, Math.max(0.62, spacingPx / 120)).toFixed(3));
     pinPlate.style.transform = `translate(${px.toFixed(1)}px, ${py.toFixed(1)}px)`;
     // A game screen's timer and countdown are laid over the tabletop: tell its flat table where that is.
     const anchor = stage.view === 'table' && tableAnchor();
@@ -671,6 +675,14 @@ function build(THREE, canvas, model, floorMap, handoff) {
       anchor.style.setProperty('--tx', `${(px - r.left).toFixed(1)}px`);
       anchor.style.setProperty('--ty', `${(py - r.top).toFixed(1)}px`);
       anchor.style.setProperty('--tr', `${tr.toFixed(1)}px`);
+      // How far below the table's middle the lowest stool reaches: the screen's status line goes under it.
+      let bottom = tr;
+      for (const slot of slots) {
+        if (!slot.node.visible) continue;
+        const [, y] = onPage(slot.node.position.x, stoolTop, slot.node.position.z + stoolWidth / 2);
+        bottom = Math.max(bottom, y - py);
+      }
+      anchor.style.setProperty('--tb', `${bottom.toFixed(1)}px`);
     }
     for (const tag of tags.values()) {
       const slot = slots[tag.dataset.seat - 1];
