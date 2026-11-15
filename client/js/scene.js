@@ -384,23 +384,32 @@ function build(THREE, canvas, model, floorMap, handoff) {
 
   // ---- Camera
   const camera = new THREE.PerspectiveCamera(VIEW.fov, 1, 0.1, 100);
-  const target = new THREE.Vector3(centre.x, box.min.y + size.y * 0.42, centre.z);
+  const targetY = box.min.y + size.y * 0.42; // the camera looks at a point this high…
+  const target = new THREE.Vector3(centre.x, targetY, centre.z); // …over the middle of what it frames
   let distance = radius * 4;
   const swing = { x: handoff?.sx || 0, y: handoff?.sy || 0 }; // where the camera is, -1..1 each way
   const want = { ...swing }; // where the pointer (or the idle drift) wants it
   let stage = { view: 'menu' }; // what the page wants shown (common.js setStage)
-  // The framing: how far the table's centre is shifted (fx, fy: fractions of the window), how far
-  // back the camera stands (d: in model radii) and where from (az, el: degrees). `goal` is the
-  // current stage's, `view` is what's on screen; they differ only while gliding between them.
+  // The framing: where what's framed lands on the page (fx, fy: shifts as fractions of the window),
+  // what the camera looks at (tx, tz: offset from the table's middle), how far back it stands (D)
+  // and where from (az, el: degrees; sw: how much the pointer swings it). `goal` is the current
+  // stage's, `view` is what's on screen; they differ only while gliding between them.
+  const FRAMING_KEYS = ['fx', 'fy', 'D', 'tx', 'tz', 'az', 'el', 'sw'];
   let goal = null;
   let view = null;
   let glide =
     handoff && !reduceMotion.matches
-      ? { from: { az: VIEWS.menu.azimuth, el: VIEWS.menu.elevation, sw: 1, ...handoff }, start: 0, delay: FADE_IN_MS, duration: VIEW.glide }
+      ? {
+          from: { az: VIEWS.menu.azimuth, el: VIEWS.menu.elevation, sw: 1, tx: 0, tz: 0, ...handoff, D: handoff.D ?? (handoff.d || 4) * radius },
+          start: 0,
+          delay: FADE_IN_MS,
+          duration: VIEW.glide,
+        }
       : null;
   scene.fog = new THREE.Fog(roomColor, 1, 2); // the floor fades out behind the table (set in frameView)
 
   function placeCamera() {
+    target.set(centre.x + view.tx, targetY, centre.z + view.tz);
     const az = rad(view.az + swing.x * VIEW.swingX * view.sw);
     const el = rad(Math.min(90, view.el + swing.y * VIEW.swingY * view.sw));
     camera.position.set(
@@ -460,21 +469,15 @@ function build(THREE, canvas, model, floorMap, handoff) {
 
     const v = VIEWS[stage.view];
     const area = freeArea(w, h);
-    const halfFov = Math.tan(rad(VIEW.fov) / 2);
-    const across = (Math.min(area.w, area.h) * v.fill) / h; // of the window's height
-    const next = {
-      // Shift the picture so the table's centre lands in the middle of the free area…
-      fx: 0.5 - (area.x + area.w / 2) / w,
-      fy: 0.5 - (area.y + area.h / 2) / h,
-      // …and stand far enough back that the ball around the model fits inside it.
-      d: 1 / Math.sin(Math.atan(across * halfFov)),
-      az: v.azimuth,
-      el: v.elevation,
-      sw: v.swing,
-    };
-    // A real change of framing (another screen's layout, a resize) glides there from where the
-    // camera is now, rather than jumping. Tiny changes (a scrollbar appearing) just ease in.
-    const moved = !goal || Math.abs(next.fx - goal.fx) > 0.01 || Math.abs(next.fy - goal.fy) > 0.01 || Math.abs(next.d / goal.d - 1) > 0.02;
+    const next = v.elevation >= 90 ? overheadFraming(v, area, w, h) : menuFraming(v, area, w, h);
+    // A real change of framing (another screen's layout, a resize, someone sitting down) glides
+    // there from where the camera is now, rather than jumping. Tiny changes just ease in.
+    const moved =
+      !goal ||
+      Math.abs(next.fx - goal.fx) > 0.01 ||
+      Math.abs(next.fy - goal.fy) > 0.01 ||
+      Math.abs(next.D / goal.D - 1) > 0.02 ||
+      Math.hypot(next.tx - goal.tx, next.tz - goal.tz) > stoolWidth * 0.1;
     if (moved && view && !glide && !reduceMotion.matches && canvas.classList.contains('ready')) {
       glide = { from: { ...view }, start: 0, delay: 0, duration: VIEW.reframe };
     }
@@ -487,13 +490,67 @@ function build(THREE, canvas, model, floorMap, handoff) {
     wake();
   }
 
+  /** The menus' view: the whole model, seen from an angle, fills the free area. */
+  function menuFraming(v, area, w, h) {
+    const halfFov = Math.tan(rad(VIEW.fov) / 2);
+    const across = (Math.min(area.w, area.h) * v.fill) / h; // of the window's height
+    return {
+      // Shift the picture so the table's centre lands in the middle of the free area…
+      fx: 0.5 - (area.x + area.w / 2) / w,
+      fy: 0.5 - (area.y + area.h / 2) / h,
+      // …and stand far enough back that the ball around the model fits inside it.
+      D: radius / Math.sin(Math.atan(across * halfFov)),
+      tx: 0,
+      tz: 0,
+      az: v.azimuth,
+      el: v.elevation,
+      sw: v.swing,
+    };
+  }
+
+  /**
+   * Looking straight down (the lobby, a game): frame just the table and the stools someone is
+   * sitting on, plus room for their name tags, so the camera only backs off as far as the players
+   * need. (Seen from above, right on screen is +x and up is -z.)
+   */
+  function overheadFraming(v, area, w, h) {
+    const half = stoolWidth / 2;
+    let [minX, maxX, minZ, maxZ] = [-tableRadius, tableRadius, -tableRadius, tableRadius];
+    const seated = (stage.seats || []).map((p) => slots[p.seat - 1]).filter((s) => s?.node.visible);
+    for (const s of seated) {
+      const x = s.rt * Math.sin(s.at);
+      const z = -s.rt * Math.cos(s.at);
+      minX = Math.min(minX, x - half);
+      maxX = Math.max(maxX, x + half);
+      minZ = Math.min(minZ, z - half);
+      maxZ = Math.max(maxZ, z + half);
+    }
+    // Name tags hang above their stools and can be wider than them: room round the edge, in px.
+    const padX = seated.length ? 80 : 12;
+    const padTop = seated.length ? 56 : 12;
+    const padBottom = 12;
+    const room = { w: Math.max(40, area.w * v.fill - 2 * padX), h: Math.max(40, area.h * v.fill - padTop - padBottom) };
+    // From this far above the stool tops, the visible height there is 2·dist·tan(fov/2), which fills h px.
+    const dist = (Math.max((maxX - minX) / room.w, (maxZ - minZ) / room.h) * h) / (2 * Math.tan(rad(VIEW.fov) / 2));
+    return {
+      fx: 0.5 - (area.x + area.w / 2) / w,
+      fy: 0.5 - (area.y + area.h / 2 + (padTop - padBottom) / 2) / h, // nudged down to leave the tags' room above
+      D: dist + stoolTop - targetY,
+      tx: (minX + maxX) / 2,
+      tz: (minZ + maxZ) / 2,
+      az: v.azimuth,
+      el: v.elevation,
+      sw: v.swing,
+    };
+  }
+
   /** Points the camera for a framing (see `goal`). */
   function frameView(v) {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     view = v;
     camera.setViewOffset(w, h, v.fx * w, v.fy * h, w, h);
-    distance = v.d * radius;
+    distance = v.D;
     camera.near = distance * 0.1; // the floor right under the camera is still well beyond this
     camera.far = distance + reach * 10; // just past where the fog ends
     camera.updateProjectionMatrix();
@@ -501,8 +558,6 @@ function build(THREE, canvas, model, floorMap, handoff) {
     scene.fog.near = distance + reach * 1.5;
     scene.fog.far = distance + reach * 9;
   }
-
-  const FRAMING_KEYS = ['fx', 'fy', 'd', 'az', 'el', 'sw'];
 
   /** Moves the framing towards the goal; true while it is still moving there. */
   function updateFraming(now, dt = 0) {
@@ -531,8 +586,9 @@ function build(THREE, canvas, model, floorMap, handoff) {
     }
     const p = Math.min(1, (now - glide.start) / (glide.duration * 1000));
     const e = p * p * (3 - 2 * p); // eases in and out
-    const mix = (key) => glide.from[key] + (goal[key] - glide.from[key]) * e;
-    frameView({ fx: mix('fx'), fy: mix('fy'), d: mix('d'), az: mix('az'), el: mix('el'), sw: mix('sw') });
+    const mixed = {};
+    for (const key of FRAMING_KEYS) mixed[key] = (glide.from[key] ?? 0) + ((goal[key] ?? 0) - (glide.from[key] ?? 0)) * e;
+    frameView(mixed);
     if (p < 1) return true;
     glide = null;
     frameView(goal);
@@ -637,7 +693,7 @@ function build(THREE, canvas, model, floorMap, handoff) {
       const t = Date.now();
       sessionStorage.setItem(
         HANDOFF_KEY,
-        JSON.stringify({ t, fx: view.fx, fy: view.fy, d: view.d, az: view.az, el: view.el, sw: view.sw, sx: swing.x, sy: swing.y })
+        JSON.stringify({ t, ...Object.fromEntries(FRAMING_KEYS.map((k) => [k, view[k]])), sx: swing.x, sy: swing.y })
       );
       draw(); // the drawing buffer is only readable in the task that drew it
       const scale = Math.min(1, STILL_MAX_WIDTH / canvas.width);

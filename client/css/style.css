@@ -1418,8 +1418,17 @@ html:not(.no-scene) .room .scene-canvas { display: block; }
 .host .scene-canvas.ready { opacity: 0.38; }  /* dimmed behind the setup screens */
 /* the lobby's and the game screens' table: full light */
 .host:has(#screen-lobby:not([hidden]), #screen-wager:not([hidden]), #screen-question:not([hidden]), #screen-oo:not([hidden])) .scene-canvas.ready { opacity: 1; }
-/* "Get ready" and the standings: just the dimmed room behind them, no name tags */
-.host:has(#screen-intro:not([hidden]), #screen-scoreboard:not([hidden])) .scene-labels { display: none; }
+/* "Get ready", the standings and Only One's grading and results: just the dimmed room behind them, no name tags */
+.host:has(#screen-intro:not([hidden]), #screen-scoreboard:not([hidden]), #screen-grading:not([hidden]), #screen-review:not([hidden])) .scene-labels { display: none; }
+html:not(.no-scene) .room :is(#screen-grading, #screen-review) { color: var(--room-ink); }
+html:not(.no-scene) .room #screen-grading :is(.gr-steps, .gr-count) { color: var(--room-ink-soft); }
+html:not(.no-scene) .room #screen-grading .gr-steps li.active { color: var(--room-ink); }
+html:not(.no-scene) .room #screen-grading .gr-steps li.done { color: var(--teal); }
+html:not(.no-scene) .room #screen-review .rv-sec h3,
+html:not(.no-scene) .room #screen-review :is(.rv-note, .rv-help, .rv-empty, .rv-item.unique .rv-tag, .rv-item.repeat .rv-tag) { color: var(--room-ink-soft); }
+html:not(.no-scene) .room #screen-review .rv-sec.unique h3 { color: var(--teal); }
+html:not(.no-scene) .room #screen-review .rv-sel { color: var(--room-ink); }
+html:not(.no-scene) .room #screen-review .rv-chip.rej { color: var(--room-ink-soft); }
 html:not(.no-scene) .room #screen-scoreboard .standings-head h1 { color: var(--room-ink); }
 html:not(.no-scene) .room #screen-scoreboard .standings-head .muted { color: var(--room-ink-soft); }
 html:not(.no-scene) .room #screen-scoreboard .race li { color: var(--brown-900); box-shadow: var(--shadow-room); }
