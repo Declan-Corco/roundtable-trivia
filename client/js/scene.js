@@ -57,10 +57,10 @@ const STOOL_BASE_GLOW = 0.3; // how much of the stool bases' baked shading shows
 const BOARDS_PER_TILE = 10; // rows of floorboards in the floor texture
 const BOARD_WIDTH = 0.36; // one floorboard's width, as a fraction of a stool seat's width
 const POOL = 1.75; // radius of the pool of light on the floor, in "reaches" (centre to the farthest stool)
-// Past the model's own stools, more go in rings further out: each ring stands RING_GAP stool widths
-// beyond the last and holds as many stools as fit round it, STOOL_GAP stool widths apart.
+// Past the model's own stools, more go in rows further out, each RING_GAP stool widths beyond the
+// last. Stools in every row stand as far apart as the model's own, so outer rows hold more, and a
+// row only gets stools as guests need them.
 const RING_GAP = 1.7;
-const STOOL_GAP = 1.4;
 const STOOL_EASE = 0.45; // seconds for new stools to pop up
 const MAX_STOOLS = 60; // guests past this many aren't given a stool of their own
 
@@ -223,56 +223,57 @@ function build(THREE, canvas, model, floorMap, handoff) {
   const stoolOverhang = baseReach - baseRing; // from a stool's centre to its outer edge
   let stoolCount = modelStools;
 
+  // How far apart stools stand round their row (along the circle): as in the model's own row.
+  const stoolSpacing = (2 * Math.PI * baseRing) / Math.max(1, modelStools);
+
   /**
-   * The rings of stools needed to seat this many: the model's own stools are the first ring, and
-   * each further ring stands further out and is filled all the way round.
+   * Where each of the first n seats goes: the model's own stools first, then row after row further
+   * out, each row holding as many stools as fit at the same spacing, filled clockwise from the top.
+   * Returns [{ a, r, own }], and the radius of the outermost row in use.
    */
-  function ringsFor(seats) {
-    const rings = [{ r: baseRing, n: modelStools, own: true }];
-    let total = modelStools;
-    while (total < Math.min(seats, MAX_STOOLS)) {
-      const r = baseRing + rings.length * RING_GAP * stoolWidth;
-      const n = Math.min(MAX_STOOLS - total, Math.floor((2 * Math.PI * r) / (stoolWidth * STOOL_GAP)));
-      rings.push({ r, n });
-      total += n;
+  function seatPlaces(n) {
+    const places = slots.slice(0, modelStools).map((s) => ({ ...s.home, own: true }));
+    let outer = baseRing;
+    for (let row = 1; places.length < n; row++) {
+      const r = baseRing + row * RING_GAP * stoolWidth;
+      const fits = Math.floor((2 * Math.PI * r) / stoolSpacing);
+      const step = (2 * Math.PI) / fits;
+      const offset = row % 2 ? step / 2 : 0; // every other row is turned half a stool, so stools don't hide behind each other
+      for (let j = 0; j < fits && places.length < n; j++) places.push({ a: offset + j * step, r, own: false });
+      outer = r;
     }
-    return rings;
+    return { places, outer };
   }
 
-  /** Sets out enough stools for the highest seat taken. Seats go ring by ring, clockwise from the top. */
+  /** Sets out a stool for every seat up to the highest one taken (and never fewer than the model's own). */
   function setStoolCount(highestSeat) {
     if (!modelStools) return;
-    const rings = ringsFor(highestSeat);
-    const n = rings.reduce((sum, ring) => sum + ring.n, 0);
+    const n = Math.min(MAX_STOOLS, Math.max(modelStools, highestSeat));
     if (n === stoolCount) return;
     stoolCount = n;
+    const { places, outer } = seatPlaces(n);
     const colours = Math.min(3, modelStools); // the model's stools go red, yellow, teal, red, …
-    let i = 0;
-    rings.forEach((ring, k) => {
-      const step = (2 * Math.PI) / ring.n;
-      const offset = k % 2 ? step / 2 : 0; // every other ring is turned half a stool, so stools don't hide behind each other
-      for (let j = 0; j < ring.n; j++, i++) {
-        let slot = slots[i];
-        const at = ring.own ? slot.home.a : offset + j * step;
-        const rt = ring.own ? slot.home.r : ring.r;
-        if (!slot) {
-          const like = slots[i % colours]; // same cushion colour as the seat number's
-          const node = like.node.clone(); // shares the geometry and materials
-          node.visible = false;
-          model.add(node);
-          slot = { node, a0: like.a0, q0: like.q0, home: null };
-          slots.push(slot);
-        }
-        if (!slot.node.visible) {
-          slot.node.visible = true;
-          Object.assign(slot, { a: at, r: rt, s: 0 }); // pops up in its place
-        }
-        Object.assign(slot, { at, rt, st: 1 });
-        placeStool(slot);
+    for (let i = 0; i < n; i++) {
+      let slot = slots[i];
+      const at = places[i].a;
+      const rt = places[i].r;
+      if (!slot) {
+        const like = slots[i % colours]; // same cushion colour as the seat number's
+        const node = like.node.clone(); // shares the geometry and materials
+        node.visible = false;
+        model.add(node);
+        slot = { node, a0: like.a0, q0: like.q0, home: null };
+        slots.push(slot);
       }
-    });
-    for (; i < slots.length; i++) slots[i].node.visible = false;
-    reachGoal = Math.max(baseReach, rings[rings.length - 1].r + stoolOverhang);
+      if (!slot.node.visible) {
+        slot.node.visible = true;
+        Object.assign(slot, { a: at, r: rt, s: 0 }); // pops up in its place
+      }
+      Object.assign(slot, { at, rt, st: 1 });
+      placeStool(slot);
+    }
+    for (let i = n; i < slots.length; i++) slots[i].node.visible = false;
+    reachGoal = Math.max(baseReach, outer + stoolOverhang);
     if (reduceMotion.matches) settleStools();
     else afterStoolsMoved();
     dirty = true;
