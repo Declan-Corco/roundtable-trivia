@@ -2,7 +2,7 @@
 (() => {
   const {
     $, el, showScreen, request, countdown, toast, watchConnection, storage, ordinal,
-    drainBar, drainRing, seatColor, renderSeats, answerCard,
+    drainBar, drainRing, seatColor, renderSeats, answerCard, setStage,
   } = window.RT;
   const SESSION_KEY = 'rt_host_session';
   const socket = io();
@@ -34,6 +34,7 @@
     $('#create-btn').textContent = next ? 'Back to the lobby' : 'Open the lobby';
     $('#cancel-setup').hidden = !(next && current.hasRound);
     showScreen('screen-setup');
+    setStage({ view: 'menu' });
     $('#setup-error').textContent = '';
     try {
       const [cfg, data] = await Promise.all([
@@ -546,6 +547,14 @@
     $('#waiting-msg').hidden = players.length > 0;
     $('#kick-hint').hidden = players.length === 0;
 
+    // With the 3D scene, the lobby's table is the model: the camera moves over it, the PIN sits on
+    // it and the names hang over its stools. The flat table below is what shows without it.
+    setStage({
+      view: 'lobby',
+      pin: current.pin,
+      title: `${current.gameName} · ${current.title}`,
+      seats: players.map((p) => ({ id: p.id, seat: p.seat, name: p.name, connected: p.connected, color: seatColor(p.seat) })),
+    });
     renderSeats(
       $('#lobby-seats'),
       players.map((p) => ({

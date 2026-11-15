@@ -3,13 +3,34 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#fdf9f3">
+  <meta name="theme-color" content="#1b110b">
   <title>Host · roundtable</title>
   <link rel="icon" href="/favicon.svg?v=__V__" type="image/svg+xml">
   <link rel="preload" href="/fonts/fredoka.woff2?v=2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/style.css?v=__V__">
+  <!-- three.js is served from this site (client/vendor/three), never a CDN, so it works offline. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/vendor/three/three.module.min.js?v=__V__",
+        "three/addons/loaders/GLTFLoader.js": "/vendor/three/addons/loaders/GLTFLoader.js?v=__V__",
+        "/vendor/three/addons/utils/BufferGeometryUtils.js": "/vendor/three/addons/utils/BufferGeometryUtils.js?v=__V__"
+      }
+    }
+  </script>
+  <script>
+    // Coming from another page with the 3D scene: show the still it left until the scene is drawn (js/scene.js).
+    try {
+      var still = JSON.parse(sessionStorage.getItem('roundtable-scene-still'));
+      sessionStorage.removeItem('roundtable-scene-still');
+      if (still && Date.now() - still.t < 5000) {
+        document.documentElement.style.setProperty('--scene-still', 'url(' + still.url + ')');
+        document.documentElement.classList.add('scene-still');
+      }
+    } catch (e) {}
+  </script>
 </head>
-<body class="host">
+<body class="host room">
   <header class="topbar">
     <a class="wordmark" href="/" data-wordmark>roundtable</a>
     <div class="actions">
@@ -23,7 +44,7 @@
   </header>
 
   <!-- 1a. Pick a game -->
-  <section class="screen" id="screen-setup">
+  <section class="screen" id="screen-setup" data-room>
     <div class="setup">
       <span class="tagline" id="setup-tagline">Set the table</span>
       <h1>Pick a game</h1>
@@ -34,7 +55,7 @@
   </section>
 
   <!-- 1b. The chosen game's categories and settings -->
-  <section class="screen setup-screen" id="screen-settings" hidden>
+  <section class="screen setup-screen" id="screen-settings" data-room hidden>
     <div class="setup setup-wide">
       <button class="back-link" id="back-to-games" type="button">← All games</button>
       <div class="settings-head">
@@ -71,7 +92,7 @@
   </section>
 
   <!-- 2. Lobby: the table fills up as guests join -->
-  <section class="screen lobby-screen" id="screen-lobby" hidden>
+  <section class="screen lobby-screen" id="screen-lobby" data-room hidden>
     <div class="lobby">
       <div class="lobby-stage">
         <div class="table-wrap" id="lobby-table">
@@ -83,7 +104,7 @@
           </div>
         </div>
       </div>
-      <aside class="lobby-side">
+      <aside class="lobby-side" data-scene-avoid>
         <div class="join-card">
           <img id="qr" alt="QR code to join the game">
           <div class="join-text">
@@ -301,5 +322,7 @@
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/common.js?v=__V__"></script>
   <script src="/js/host.js?v=__V__"></script>
+  <!-- The 3D backdrop: loads after the page, and the page works without it. -->
+  <script type="module" src="/js/scene.js?v=__V__"></script>
 </body>
 </html>

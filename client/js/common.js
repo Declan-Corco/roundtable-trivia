@@ -57,6 +57,11 @@
     document.querySelectorAll('.screen').forEach((s) => {
       s.hidden = s.id !== id;
     });
+    // Menu screens marked data-room sit in the dark "room" (style.css, "THE ROOM"); every other
+    // screen keeps the light page. js/scene.js shows its 3D scene only while the room is on.
+    document.body.classList.toggle('room', !!document.getElementById(id)?.hasAttribute('data-room'));
+    // Phones tint their browser bar to match: dark in the room, cream elsewhere.
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', getComputedStyle(document.body).backgroundColor);
     window.scrollTo(0, 0);
   }
 
@@ -225,8 +230,18 @@
   /** Points with a sign: +500, −300 (a real minus sign), +0. */
   const signed = (n) => (n < 0 ? `−${Math.abs(n).toLocaleString()}` : `+${n.toLocaleString()}`);
 
+  /**
+   * Tells the 3D scene (js/scene.js) what to show: { view: 'menu' }, or the host's lobby:
+   * { view: 'lobby', pin, title, seats: [{ id, seat, name, connected, color }] }. Kept on window
+   * too, for a scene that finishes loading after the page asked.
+   */
+  function setStage(stage) {
+    window.roundtableStage = stage;
+    document.dispatchEvent(new CustomEvent('roundtable:stage', { detail: stage }));
+  }
+
   window.RT = {
     $, el, letter, showScreen, request, countdown, toast, watchConnection, storage, ordinal, signed,
-    LETTERS, MARK_SVG, drainBar, drainRing, seatColor, renderSeats, answerCard,
+    LETTERS, MARK_SVG, drainBar, drainRing, seatColor, renderSeats, answerCard, setStage,
   };
 })();
