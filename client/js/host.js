@@ -13,7 +13,7 @@
   let stopTimer = null;
   let stopAuto = null; // auto mode: the countdown on the current "next" button
   let catalog = []; // games offered by the server (/api/games)
-  let choice = null; // { game, packs: Set<id>, upload: { data, title, count } | null, custom: '', settings: {} }
+  let choice = null; // the lobby's game, categories and settings: { game, packs: Set<id>, settings: {} }
 
   /** True while the table is in the lobby waiting for the host to pick the next game. */
   const picking = () => current?.phase === 'lobby' && current.choosing;
@@ -110,26 +110,17 @@
       const v = saved.settings?.[s.id];
       settings[s.id] = s.options.some((o) => o.value === v) ? v : s.default;
     }
-    return { game, packs, upload: null, custom: saved.custom || '', settings };
+    return { game, packs, settings };
   }
 
   function savePrefs(c) {
     const prefs = storage.get(localStorage, PREFS_KEY) || {};
-    prefs[c.game.id] = { packs: [...c.packs], settings: c.settings, custom: c.custom };
+    prefs[c.game.id] = { packs: [...c.packs], settings: c.settings };
     storage.set(localStorage, PREFS_KEY, prefs);
   }
 
-  /** The host's own prompts (Only One) or questions (Split Decision), one per line. */
-  const customList = (c) => (c.custom || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 50);
-
   /** What the server needs to build a round from a choice (host:create / host:setup). */
-  const roundRequest = (c) => ({
-    game: c.game.id,
-    packs: [...c.packs],
-    customPrompts: c.game.customPrompts ? customList(c) : undefined,
-    customSet: c.upload?.data,
-    settings: c.settings,
-  });
+  const roundRequest = (c) => ({ game: c.game.id, packs: [...c.packs], settings: c.settings });
 
   /**
    * Picking a game opens the lobby straight away, with the host's last choices (or the defaults);
@@ -238,7 +229,7 @@
   }
 
   function renderPacks() {
-    const { game, upload } = draft;
+    const { game } = draft;
     const online = game.online;
     const all = [...(online?.categories || []).map((c) => c.id), ...game.packs.map((p) => p.id)];
     const groups = [
@@ -250,23 +241,13 @@
       ),
     ];
     if (online) {
-      // Popular Open Trivia DB categories (banked on the server); credited as its license requires.
-      groups.push(
-        el('div', { className: 'cat-group' }, ...online.categories.map((c) => categoryRow({ id: c.id, icon: c.icon || '❓', title: c.title, desc: c.description }))),
-        el(
-          'p',
-          { className: 'credit-line' },
-          'Questions from ',
-          el('a', { href: online.url, target: '_blank', rel: 'noopener' }, online.name),
-          ', licensed ',
-          el('a', { href: online.licenseUrl, target: '_blank', rel: 'noopener' }, online.license),
-          '.'
-        )
-      );
+      // Popular Open Trivia DB categories (banked on the server). Its license credit is on every
+      // question the TV shows.
+      groups.push(el('div', { className: 'cat-group' }, ...online.categories.map((c) => categoryRow({ id: c.id, icon: c.icon || '❓', title: c.title, desc: c.description }))));
     }
     if (game.packs.length) {
       groups.push(
-        online ? el('h4', { className: 'cat-group-head' }, 'Your own questions') : null,
+        online ? el('h4', { className: 'cat-group-head' }, 'From this server') : null,
         el(
           'div',
           { className: 'cat-group' },
@@ -275,64 +256,6 @@
       );
     }
     $('#set-list').replaceChildren(...groups);
-
-    // Below the dropdown: an uploaded question file, and the host's own prompts.
-    const extras = [];
-    if (game.allowUpload) {
-      extras.push(
-        el(
-          'label',
-          { className: 'upload-row' + (upload ? ' selected' : '') },
-          el('input', { type: 'file', accept: '.json,application/json', onchange: onUpload }),
-          el('span', { className: 'upload-icon', 'aria-hidden': 'true' }, upload ? '✓' : '⬆'),
-          el(
-            'span',
-            { className: 'upload-text' },
-            el('span', { className: 'cat-title' }, upload ? upload.title : 'Upload a question file'),
-            el('span', { className: 'cat-desc' }, upload ? `${upload.count} questions · click to change` : 'A .json file. The README shows the format.')
-          ),
-          upload
-            ? el(
-                'button',
-                {
-                  type: 'button',
-                  className: 'link-btn',
-                  onclick: (e) => {
-                    e.preventDefault();
-                    draft.upload = null;
-                    renderPacks();
-                    updateSummary();
-                  },
-                },
-                'Remove'
-              )
-            : null
-        )
-      );
-    }
-    if (game.customPrompts) {
-      // Only One / Split Decision / Table Takedown: the host's own prompts, one per line, played first.
-      extras.push(
-        el(
-          'div',
-          { className: 'sd-custom' },
-          el('label', { className: 'sd-label', htmlFor: 'custom-prompts' }, 'Write your own', el('small', {}, game.customPrompts.help || 'One per line.')),
-          el('textarea', {
-            id: 'custom-prompts',
-            className: 'input custom-prompts',
-            rows: 3,
-            maxLength: 3000,
-            placeholder: game.customPrompts.placeholder || '',
-            value: draft.custom,
-            oninput: (e) => {
-              draft.custom = e.target.value;
-              updateSummary();
-            },
-          })
-        )
-      );
-    }
-    $('#set-extras').replaceChildren(...extras);
   }
 
   function setAll(ids) {
@@ -364,23 +287,22 @@
   }
 
   function updateSummary() {
-    const { game, packs, upload, settings } = draft;
+    const { game, packs, settings } = draft;
     const onlinePicked = [...packs].filter((id) => id.includes(':')).length;
-    const available =
-      game.packs.filter((p) => packs.has(p.id)).reduce((n, p) => n + p.count, 0) + (upload?.count || 0) + (game.customPrompts ? customList(draft).length : 0);
-    const picked = packs.size + (upload ? 1 : 0);
+    const available = game.packs.filter((p) => packs.has(p.id)).reduce((n, p) => n + p.count, 0);
+    const picked = packs.size;
     const total = (game.online?.categories.length || 0) + game.packs.length;
-    $('#pack-hint').textContent = picked ? `${packs.size} of ${total} picked${upload ? ' + your file' : ''}` : 'None picked';
+    $('#pack-hint').textContent = picked ? `${picked} of ${total} picked` : 'None picked';
     let text;
     if (game.kind === 'onlyone') {
       const playing = Math.min(settings.count, available);
-      text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s each` : 'Pick a category, or write your own';
+      text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s each` : 'Pick at least one category';
     } else if (game.kind === 'split') {
       const playing = Math.min(settings.count, available);
-      text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to pick, ${settings.guessTime}s to guess` : 'Pick a question pack, or write your own';
+      text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to pick, ${settings.guessTime}s to guess` : 'Pick at least one question pack';
     } else if (game.kind === 'takedown') {
       const playing = Math.min(settings.count, available);
-      text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to write, ${settings.voteTime}s to vote` : 'Pick a prompt pack, or write your own';
+      text = available ? `${playing} round${playing === 1 ? '' : 's'} · ${settings.time}s to write, ${settings.voteTime}s to vote` : 'Pick at least one prompt pack';
     } else if (onlinePicked) {
       text = `${settings.count || 20} questions · from ${picked} categor${picked === 1 ? 'y' : 'ies'}`;
     } else if (available) {
@@ -391,23 +313,6 @@
     }
     $('#round-summary').textContent = text;
     $('#settings-save').disabled = !onlinePicked && !available;
-  }
-
-  async function onUpload(e) {
-    const file = e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
-    $('#settings-error').textContent = '';
-    try {
-      if (file.size > 900_000) throw new Error('That file is too large (max ~900 KB).');
-      const data = JSON.parse(await file.text());
-      if (!Array.isArray(data.questions) || !data.questions.length) throw new Error('The file has no "questions" array.');
-      draft.upload = { data, title: data.title || file.name.replace(/\.json$/i, ''), count: data.questions.length };
-      renderPacks();
-      updateSummary();
-    } catch (err) {
-      $('#settings-error').textContent = err instanceof SyntaxError ? `That file is not valid JSON: ${err.message}` : err.message;
-    }
   }
 
   // ------------------------------------------------------------- server events

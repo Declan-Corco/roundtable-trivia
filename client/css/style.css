@@ -1271,18 +1271,23 @@ button.td-card:hover { box-shadow: 0 0 0 2px var(--cream-deep), var(--shadow-car
   align-self: flex-end;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border: 1.5px solid var(--cream-deep);
+  gap: 10px;
+  padding: 12px 22px;
+  border: 0;
   border-radius: 999px;
-  background: var(--white);
-  color: var(--brown-900);
+  background: var(--brown-900);
+  color: var(--paper);
   font: inherit;
-  font-weight: 600;
+  font-size: 1.2rem;
+  font-weight: 650;
   cursor: pointer;
+  box-shadow: 0 4px 0 #2c190f, 0 8px 16px -6px rgba(44, 25, 15, 0.45);
+  transition: transform 0.12s, box-shadow 0.12s, filter 0.15s;
 }
-.lobby-settings-btn:hover { border-color: var(--muted); }
-.lobby-settings-btn:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+.lobby-settings-btn span { font-size: 1.45rem; line-height: 1; }
+.lobby-settings-btn:hover { filter: brightness(1.2); }
+.lobby-settings-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #2c190f, 0 4px 8px -4px rgba(44, 25, 15, 0.45); }
+.lobby-settings-btn:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
 
 /* ---------------------------------------------------------------- lobby settings: a window over the lobby
    One column, so nothing has to squeeze: the categories in a dropdown of plain rows, then each
