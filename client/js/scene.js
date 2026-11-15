@@ -509,13 +509,14 @@ function build(THREE, canvas, model, floorMap, handoff) {
   }
 
   /**
-   * Looking straight down (the lobby, a game): frame just the table and the stools someone is
-   * sitting on, plus room for their name tags, so the camera only backs off as far as the players
-   * need. (Seen from above, right on screen is +x and up is -z.)
+   * Looking straight down (the lobby, a game): frame the table with its first ring of stools
+   * (centred, even with nobody seated), plus any outer-row stools someone is sitting on, plus room
+   * for name tags, so the camera only backs off as far as the players need. (Seen from above, right
+   * on screen is +x and up is -z.)
    */
   function overheadFraming(v, area, w, h) {
     const half = stoolWidth / 2;
-    let [minX, maxX, minZ, maxZ] = [-tableRadius, tableRadius, -tableRadius, tableRadius];
+    let [minX, maxX, minZ, maxZ] = [-baseReach, baseReach, -baseReach, baseReach];
     const seated = (stage.seats || []).map((p) => slots[p.seat - 1]).filter((s) => s?.node.visible);
     for (const s of seated) {
       const x = s.rt * Math.sin(s.at);
@@ -525,9 +526,10 @@ function build(THREE, canvas, model, floorMap, handoff) {
       minZ = Math.min(minZ, z - half);
       maxZ = Math.max(maxZ, z + half);
     }
-    // Name tags hang above their stools and can be wider than them: room round the edge, in px.
-    const padX = seated.length ? 80 : 12;
-    const padTop = seated.length ? 56 : 12;
+    // Name tags hang above their stools and can be wider than them: room round the edge, in px
+    // (always, so the framing doesn't change when the first player sits down).
+    const padX = 80;
+    const padTop = 56;
     const padBottom = 12;
     const room = { w: Math.max(40, area.w * v.fill - 2 * padX), h: Math.max(40, area.h * v.fill - padTop - padBottom) };
     // From this far above the stool tops, the visible height there is 2·dist·tan(fov/2), which fills h px.
