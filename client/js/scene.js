@@ -40,7 +40,8 @@ const VIEWS = {
   lobby: { azimuth: 0, elevation: 90, fill: 0.9, swing: 0 }, // straight down over the table, seat 1 at the top
   // In a game (bets, questions, Only One): the same view, framed into the flat table's place on the
   // screen (an element marked data-scene-table), with the timer laid over the tabletop.
-  table: { azimuth: 0, elevation: 90, fill: 1, swing: 0 },
+  // fill below 1 leaves room for the name tags, which hang above the stools.
+  table: { azimuth: 0, elevation: 90, fill: 0.85, swing: 0 },
 };
 // Going from one page with the scene to another (landing → host and back), the old page leaves its
 // framing here, and the new one starts from it and glides to its own, so the table moves across
@@ -458,18 +459,6 @@ function build(THREE, canvas, model, floorMap, handoff) {
     camera.aspect = w / h;
 
     const v = VIEWS[stage.view];
-    // A table spot marked data-scene-keep (the bets screen) doesn't re-frame the camera in a game
-    // that's already under way: it stays where it was, unless the window really changed size.
-    const keep = tableAnchor()?.hasAttribute('data-scene-keep');
-    if (keep && goal?.stage === 'table' && stage.view === 'table' && Math.abs(goal.w - w) < 60 && Math.abs(goal.h - h) < 60) {
-      if (resized && canvas.classList.contains('ready')) {
-        updateFraming(performance.now());
-        draw();
-      }
-      dirty = true;
-      wake();
-      return;
-    }
     const area = freeArea(w, h);
     const halfFov = Math.tan(rad(VIEW.fov) / 2);
     const across = (Math.min(area.w, area.h) * v.fill) / h; // of the window's height
@@ -482,9 +471,6 @@ function build(THREE, canvas, model, floorMap, handoff) {
       az: v.azimuth,
       el: v.elevation,
       sw: v.swing,
-      stage: stage.view, // what it was worked out for (see data-scene-keep above)
-      w,
-      h,
     };
     // A real change of framing (another screen's layout, a resize) glides there from where the
     // camera is now, rather than jumping. Tiny changes (a scrollbar appearing) just ease in.
