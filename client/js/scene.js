@@ -228,18 +228,30 @@ function build(THREE, canvas, model, floorMap, handoff) {
 
   /**
    * Where each of the first n seats goes: the model's own stools first, then row after row further
-   * out, each row holding as many stools as fit at the same spacing, filled clockwise from the top.
-   * Returns [{ a, r, own }], and the radius of the outermost row in use.
+   * out, filled clockwise from the top. The rows alternate like brickwork: the second row's stools
+   * sit in the gaps between the first row's, the third row's in line with the first row's, and so
+   * on. Each row holds a whole number of stools per first-row seat (as many as keep about the first
+   * row's spacing), grouped evenly round each gap or seat. Returns [{ a, r }] and the outermost row's radius.
    */
   function seatPlaces(n) {
-    const places = slots.slice(0, modelStools).map((s) => ({ ...s.home, own: true }));
+    const places = slots.slice(0, modelStools).map((s) => ({ ...s.home }));
+    const firstStep = (2 * Math.PI) / modelStools; // between neighbouring first-row seats
+    const seatOne = slots[0].home.a;
     let outer = baseRing;
     for (let row = 1; places.length < n; row++) {
       const r = baseRing + row * RING_GAP * stoolWidth;
-      const fits = Math.floor((2 * Math.PI * r) / stoolSpacing);
-      const step = (2 * Math.PI) / fits;
-      const offset = row % 2 ? step / 2 : 0; // every other row is turned half a stool, so stools don't hide behind each other
-      for (let j = 0; j < fits && places.length < n; j++) places.push({ a: offset + j * step, r, own: false });
+      const perSeat = Math.max(1, Math.round((2 * Math.PI * r) / stoolSpacing / modelStools));
+      const shift = row % 2 ? firstStep / 2 : 0; // odd rows centre on the gaps, even rows on the seats
+      const rowPlaces = [];
+      for (let g = 0; g < modelStools; g++) {
+        const centre = seatOne + shift + g * firstStep;
+        for (let j = 0; j < perSeat; j++) {
+          const a = centre + (j - (perSeat - 1) / 2) * (firstStep / perSeat);
+          rowPlaces.push({ a: ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), r });
+        }
+      }
+      rowPlaces.sort((p, q) => p.a - q.a); // clockwise from the top
+      for (const p of rowPlaces) if (places.length < n) places.push(p);
       outer = r;
     }
     return { places, outer };
