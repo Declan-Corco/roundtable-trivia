@@ -334,24 +334,29 @@
     runTimer('g');
   }
 
+  // The slider leans towards an answer: dragging towards the first answer's side (left, where its
+  // name is) means more of the room picked it, so the slider's own value runs the other way.
+  let guess = 50; // percent of the room that picked the first answer
   function setGuess(v) {
     const n = Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
     const [a, b] = current?.answers || ['', ''];
-    $('#g-range').value = String(n);
+    guess = n;
+    $('#g-range').value = String(100 - n);
+    $('#g-range').setAttribute('aria-valuetext', `${n}% ${a}, ${100 - n}% ${b}`);
     $('#g-amount').textContent = `${n}%`;
     $('#g-amount').setAttribute('aria-label', `${n}% ${a}, ${100 - n}% ${b}`);
     $('#g-bar').style.setProperty('--a', `${n}%`);
   }
-  $('#g-range').addEventListener('input', (e) => setGuess(e.target.value));
+  $('#g-range').addEventListener('input', (e) => setGuess(100 - Number(e.target.value)));
   for (const btn of $('#g-quick').children) {
-    btn.addEventListener('click', () => setGuess(Number($('#g-range').value) + Number(btn.dataset.step)));
+    btn.addEventListener('click', () => setGuess(guess + Number(btn.dataset.step)));
   }
 
   $('#g-lock').addEventListener('click', async () => {
     const btn = $('#g-lock');
     btn.disabled = true;
     navigator.vibrate?.(30);
-    const res = await request(socket, 'player:guess', { value: Number($('#g-range').value) });
+    const res = await request(socket, 'player:guess', { value: guess });
     if (!res.ok) {
       toast(res.error);
       if (/connection|respond/i.test(res.error)) btn.disabled = false;
