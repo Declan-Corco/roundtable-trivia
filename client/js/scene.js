@@ -58,8 +58,8 @@ const BOARDS_PER_TILE = 10; // rows of floorboards in the floor texture
 const BOARD_WIDTH = 0.36; // one floorboard's width, as a fraction of a stool seat's width
 const POOL = 1.75; // radius of the pool of light on the floor, in "reaches" (centre to the farthest stool)
 // Past the model's own stools, more go in rows further out, each RING_GAP stool widths beyond the
-// last. Stools in every row stand as far apart as the model's own, so outer rows hold more, and a
-// row only gets stools as guests need them.
+// last. Each row has a stool behind every first-row stool plus more in between, so outer rows hold
+// more, and a row only gets stools as guests need them.
 const RING_GAP = 1.7;
 const STOOL_EASE = 0.45; // seconds for new stools to pop up
 const MAX_STOOLS = 60; // guests past this many aren't given a stool of their own
@@ -223,15 +223,12 @@ function build(THREE, canvas, model, floorMap, handoff) {
   const stoolOverhang = baseReach - baseRing; // from a stool's centre to its outer edge
   let stoolCount = modelStools;
 
-  // How far apart stools stand round their row (along the circle): as in the model's own row.
-  const stoolSpacing = (2 * Math.PI * baseRing) / Math.max(1, modelStools);
-
   /**
    * Where each of the first n seats goes: the model's own stools first, then row after row further
-   * out, filled clockwise from the top. The rows alternate like brickwork: the second row's stools
-   * sit in the gaps between the first row's, the third row's in line with the first row's, and so
-   * on. Each row holds a whole number of stools per first-row seat (as many as keep about the first
-   * row's spacing), grouped evenly round each gap or seat. Returns [{ a, r }] and the outermost row's radius.
+   * out, filled clockwise from the top. Every row repeats the first row's spread: a stool straight
+   * behind each first-row stool, plus more evenly in between (one in the second row, two in the
+   * third, …), so the spacing stays about the same as the rows get bigger.
+   * Returns [{ a, r }] and the outermost row's radius.
    */
   function seatPlaces(n) {
     const places = slots.slice(0, modelStools).map((s) => ({ ...s.home }));
@@ -240,18 +237,11 @@ function build(THREE, canvas, model, floorMap, handoff) {
     let outer = baseRing;
     for (let row = 1; places.length < n; row++) {
       const r = baseRing + row * RING_GAP * stoolWidth;
-      const perSeat = Math.max(1, Math.round((2 * Math.PI * r) / stoolSpacing / modelStools));
-      const shift = row % 2 ? firstStep / 2 : 0; // odd rows centre on the gaps, even rows on the seats
-      const rowPlaces = [];
-      for (let g = 0; g < modelStools; g++) {
-        const centre = seatOne + shift + g * firstStep;
-        for (let j = 0; j < perSeat; j++) {
-          const a = centre + (j - (perSeat - 1) / 2) * (firstStep / perSeat);
-          rowPlaces.push({ a: ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), r });
-        }
+      const step = firstStep / (row + 1);
+      for (let j = 0; j < modelStools * (row + 1) && places.length < n; j++) {
+        const a = seatOne + j * step;
+        places.push({ a: ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI), r });
       }
-      rowPlaces.sort((p, q) => p.a - q.a); // clockwise from the top
-      for (const p of rowPlaces) if (places.length < n) places.push(p);
       outer = r;
     }
     return { places, outer };
