@@ -26,7 +26,7 @@ own questions on the setup page: `Cats or dogs? | Cats | Dogs`, one per line.
 | `title` | no | Name shown on the host screen (defaults to the file name). |
 | `icon` | no | An emoji shown on the pack's card. |
 | `description` | no | Short description. |
-| `questions` | **yes** | The questions. Each is `{ "question", "a", "b" }` with its two answers (up to 24 characters each), or just the question (as text, or without `a` and `b`) for a yes / no question. |
+| `questions` | **yes** | The questions. Each is `{ "question", "a", "b" }` with its two answers (up to 24 characters each), or just the question (as text, or without `a` and `b`). Without answers, a question written as a choice takes them from the question ("Lake or beach day?" → Lake / Beach day, "Shower: morning or night?" → Morning / Night); any other is yes / no. |
 
 Good questions split a room: there's no right answer, and people can't easily guess which side
 most others will pick. Lopsided ones ("Can you whistle?") are fun too, because tables still have to

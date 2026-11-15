@@ -21,7 +21,7 @@ Each round, the big screen shows a category, like "Things in a dorm room". Every
   - **A small AI model running on the server** handles meaning: "Keurig" = "coffee maker", "TV" = "television", "couch" = "sofa". The model is [bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5), about 34 MB, and runs on the CPU with no API key and no cost per game. It downloads once, the first time the server starts, to `server/data/models/`, and works offline after that.
 - **Junk is screened out on the server** (`server/src/screen.js`, simple text rules): keyboard mashing ("asdfgh"), filler ("idk", "no idea"), code (`print("hello")`, `<script>`), answers in another alphabet ("холодильник") and phrases in another language ("el perro que ladra") are rejected before the Claude check, so they aren't sent to Anthropic. It's cautious: single foreign words and borrowed phrases ("Cinco de Mayo") pass, and some rules switch off when the category is about words, sounds or languages. The host can allow any of them.
 - **The host has the final say.** Before scoring, the TV shows the groups. Tap an answer to pull it out of a group, tap two groups to merge them, or ✕ an answer that doesn't fit the category.
-- 230 categories ship in six packs (`server/onlyone/`), and the host can type their own on the setup page.
+- 230 categories ship in six packs (`server/onlyone/`). Add your own as a pack file (see below).
 - If the AI model can't be installed or loaded, Only One still works: matching falls back to the text rules, and the host merges the rest.
 
 #### Claude check (optional)
@@ -43,7 +43,7 @@ Each round, the big screen shows a question with two answers, like "Shower: morn
 3. **Reveal.** The bar slides to the room's real split, and every table's guess drops onto it as a pin. **A guess scores up to 100, less the further off it is** (exact = 100, 10% off = 80, 25% off = 50, 50% or more off = 0). **The closest guess also gets a 50-point bonus** (ties all get it).
 
 - About 140 questions ship in five packs (`server/split/`): Everyday Debates, Food Fights, Hot Takes, Would You Rather and Have You Ever?. The README there shows the format.
-- The host can type their own on the setup page, one per line: `Cats or dogs? | Cats | Dogs`, or just `Have you ever been to Paris?` for a yes / no question.
+- Add your own as a pack file. A question can list its two answers, or leave them out: a question written as a choice takes them from the question ("Lake or beach day?" → Lake / Beach day), and any other is yes / no.
 
 ### Table Takedown
 
@@ -53,13 +53,13 @@ Each round, the big screen shows a prompt, like "A terrible name for a pet goldf
 2. **Vote.** The answers go up on the TV with no names, and every table votes for its favourite, but never its own.
 3. **Reveal.** The TV shows who wrote what. **Each vote an answer gets is worth 100** to the table that wrote it, **the top answer gets 100 more** (ties all get it), and **every table that voted for the winner gets 50**, so it pays to back the answer you think the room will pick.
 
-**Moderation.** The host picks the crowd on the setup page: **Family-friendly** (the default: no swearing, innuendo or drugs), **Grown-ups** (swearing and innuendo are fine) or **Anything goes**. Slurs, hate aimed at groups, threats, personal information and anything sexual involving minors are blocked for every crowd.
+**Moderation.** The host picks the crowd in the lobby’s Settings: **Family-friendly** (the default: no swearing, innuendo or drugs), **Grown-ups** (swearing and innuendo are fine) or **Anything goes**. Slurs, hate aimed at groups, threats, personal information and anything sexual involving minors are blocked for every crowd.
 
 - **With an API key**, Claude (`MODERATION_MODEL`, default Claude Haiku 5.5) reads every answer together with its prompt, so it catches innuendo and insults a word list can't, and lets through what a word list would wrongly block. A table sees a short reason when its answer is blocked. About $0.00005 per answer; answers are sent to Anthropic. If Claude doesn't answer within 6 seconds of writing ending, or fails, the word list decides.
 - **Without a key**, a word list does the filtering (it handles leetspeak like "sh1t" and censored words like "f**k").
 - **The host can take down any answer** during the vote by clicking it on the TV. Votes for it go back to the tables that cast them.
 - **Lock the crowd for every host** with `TAKEDOWN_FILTER=family` (or `grownups` / `anything`) in `/etc/roundtable.env`, e.g. on a school server.
-- 100 prompts ship in four packs (`server/takedown/`), and the host can type their own on the setup page.
+- 100 prompts ship in four packs (`server/takedown/`). Add your own as a pack file.
 
 ```
 Roundtable/
@@ -83,7 +83,7 @@ Roundtable/
     └── package.json
 ```
 
-**Features:** lobby with QR code + PIN · auto mode (the game moves on by itself 10 s, 30 s or 1 min after each answer and the standings, so the host doesn't have to press anything) · the PIN stays on screen so people can join late, even mid-game · play again with the same table and pick a new game · remove players · lock the lobby · "get ready" countdown · categories you can mix, and settings (question count, betting time, answer time, order) · bet on each category before the question · 4-colour A/B/C/D answer tiles · answer streaks · double-winnings questions · true/false and multiple-correct questions · answer chart after each question · top-5 scoreboard · podium finish · players and the host can refresh or lose signal and rejoin automatically · works on phones, tablets and desktops · upload a trivia file straight from the host screen · optional host password.
+**Features:** lobby with QR code + PIN · auto mode (the game moves on by itself 10 s, 30 s or 1 min after each answer and the standings, so the host doesn't have to press anything) · the PIN stays on screen so people can join late, even mid-game · play again with the same table and pick a new game · remove players · lock the lobby · "get ready" countdown · categories you can mix, and settings (question count, betting time, answer time, order) · bet on each category before the question · 4-colour A/B/C/D answer tiles · answer streaks · double-winnings questions · true/false and multiple-correct questions · answer chart after each question · top-5 scoreboard · podium finish · players and the host can refresh or lose signal and rejoin automatically · works on phones, tablets and desktops · optional host password.
 
 ---
 
@@ -306,7 +306,7 @@ They can also set the **Difficulty**: Mixed, Easy, Medium or Hard.
 
 Your own categories are `.json` files in `server/trivia/` (on an installed server: `/opt/roundtable/server/trivia/`).
 
-A new file appears on the host screen the next time the page loads. Hosts can also **upload a .json file** right from the setup page, and tick several categories to mix them into one game. The file's `title` is the category players see before they bet.
+A new file appears on the host screen the next time the page loads. Hosts can tick several categories in the lobby’s Settings to mix them into one game. The file's `title` is the category players see before they bet.
 
 ```json
 {
@@ -336,7 +336,7 @@ Only One packs are `.json` files in `server/onlyone/` (installed: `/opt/roundtab
   "prompts": ["Things in a dorm room", "College majors", "Excuses for missing class"] }
 ```
 
-Hosts can also type their own prompts, one per line, on the Only One setup page; those are played first. Details: [server/onlyone/README.md](server/onlyone/README.md).
+Details: [server/onlyone/README.md](server/onlyone/README.md).
 
 ---
 

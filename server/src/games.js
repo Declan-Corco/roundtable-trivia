@@ -262,9 +262,34 @@ function loadPromptPacks(dir = config.ONLYONE_DIR) {
 const MAX_OPTION = 24;
 const cleanOption = (v) => cleanPrompt(v).slice(0, MAX_OPTION);
 
+// "Would you rather …", "Do you prefer …", "Shower: …": lead-ins before the two choices.
+const CHOICE_LEAD = /^(?:would you rather|do you prefer|which do you prefer|which is better|which is worse|which would you pick|are you more of an?|are you an?|team)\s+/i;
+// "Have you ever …?", "Do you …?": questions you answer yes or no, even with an "or" in them.
+const YES_NO_LEAD = /^(?:have|has|had|did|do|does|can|could|will|would|should|is|are|was|were|am)\b/i;
+
 /**
- * One Split Decision question from a pack or the host: "Question?" (a yes/no question),
- * { question, a, b }, or [question, a, b]. Returns { question, a, b } or null.
+ * The two answers of a question written as a choice: "Lake or beach day?" → Lake / Beach day,
+ * "Shower: morning or night?" → Morning / Night. Null for a yes / no question, or one that doesn't
+ * split cleanly into two short answers.
+ */
+function choicesIn(question) {
+  let s = question.includes(':') ? question.slice(question.lastIndexOf(':') + 1) : question;
+  s = s.replace(/[?!.]+\s*$/, '').trim();
+  const rest = s.replace(CHOICE_LEAD, '');
+  if (rest === s && YES_NO_LEAD.test(s)) return null;
+  const parts = rest.split(/\s+or\s+/i);
+  if (parts.length !== 2) return null;
+  // "Team summer or team winter?": the lead-in can be repeated before the second choice too.
+  const [a, b] = parts.map((p) => p.trim().replace(/,$/, '').replace(/^(?:a|an|the|team)\s+/i, ''));
+  if (!a || !b || /,/.test(a + b) || /^not$/i.test(b) || a.length > MAX_OPTION || b.length > MAX_OPTION) return null;
+  const cap = (t) => t[0].toUpperCase() + t.slice(1);
+  return [cap(a), cap(b)];
+}
+
+/**
+ * One Split Decision question from a pack or the host: "Question?", { question, a, b }, or
+ * [question, a, b]. Without answers, a question written as a choice ("Lake or beach day?") takes
+ * its two answers from the question, and any other is yes / no. Returns { question, a, b } or null.
  */
 function splitQuestion(raw) {
   let question;
@@ -277,7 +302,7 @@ function splitQuestion(raw) {
   a = cleanOption(a);
   b = cleanOption(b);
   if (!question) return null;
-  if (!a && !b) [a, b] = ['Yes', 'No'];
+  if (!a && !b) [a, b] = choicesIn(question) || ['Yes', 'No'];
   if (!a || !b || a.toLowerCase() === b.toLowerCase()) return null;
   return { question, a, b };
 }
