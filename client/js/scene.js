@@ -516,7 +516,9 @@ function build(THREE, canvas, model, floorMap, handoff) {
    */
   function overheadFraming(v, area, w, h) {
     const half = stoolWidth / 2;
-    let [minX, maxX, minZ, maxZ] = [-baseReach, baseReach, -baseReach, baseReach];
+    // The first ring's real extent (baseReach is half the model box's diagonal, which overshoots it).
+    const ring = slots.slice(0, modelStools).reduce((r, s) => Math.max(r, s.home.r), tableRadius) + half;
+    let [minX, maxX, minZ, maxZ] = [-ring, ring, -ring, ring];
     const seated = (stage.seats || []).map((p) => slots[p.seat - 1]).filter((s) => s?.node.visible);
     for (const s of seated) {
       const x = s.rt * Math.sin(s.at);
@@ -526,11 +528,12 @@ function build(THREE, canvas, model, floorMap, handoff) {
       minZ = Math.min(minZ, z - half);
       maxZ = Math.max(maxZ, z + half);
     }
-    // Name tags hang above their stools and can be wider than them: room round the edge, in px
-    // (always, so the framing doesn't change when the first player sits down).
-    const padX = 80;
-    const padTop = 56;
-    const padBottom = 12;
+    // The view's fill already leaves a margin; on top of that, a little room above for the name tag
+    // that hangs over the top stool (proportional, so a small table spot isn't eaten up). Tags may
+    // overhang the sides. Always the same, so the framing doesn't change when someone sits down.
+    const padX = 0;
+    const padTop = Math.min(40, area.h * 0.08);
+    const padBottom = 0;
     const room = { w: Math.max(40, area.w * v.fill - 2 * padX), h: Math.max(40, area.h * v.fill - padTop - padBottom) };
     // From this far above the stool tops, the visible height there is 2·dist·tan(fov/2), which fills h px.
     const dist = (Math.max((maxX - minX) / room.w, (maxZ - minZ) / room.h) * h) / (2 * Math.tan(rad(VIEW.fov) / 2));
