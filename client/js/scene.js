@@ -392,6 +392,10 @@ function build(THREE, canvas, model, floorMap, handoff) {
   // current stage's, `view` is what's on screen; they differ only while gliding between them.
   let goal = null;
   let view = null;
+  // In a game the camera settles once, on the first screen with the table, and stays put for the
+  // rest of it: re-framing for each screen's layout (bets, "Get ready", question) looked like a
+  // jumpy zoom. { w, h, goal }, reset when the game ends or the window changes size.
+  let gameFraming = null;
   let glide =
     handoff && !reduceMotion.matches
       ? { from: { az: VIEWS.menu.azimuth, el: VIEWS.menu.elevation, sw: 1, ...handoff }, start: 0, delay: FADE_IN_MS, duration: VIEW.glide }
@@ -455,19 +459,24 @@ function build(THREE, canvas, model, floorMap, handoff) {
     camera.aspect = w / h;
 
     const v = VIEWS[stage.view];
-    const area = freeArea(w, h);
-    const halfFov = Math.tan(rad(VIEW.fov) / 2);
-    const across = (Math.min(area.w, area.h) * v.fill) / h; // of the window's height
-    goal = {
-      // Shift the picture so the table's centre lands in the middle of the free area…
-      fx: 0.5 - (area.x + area.w / 2) / w,
-      fy: 0.5 - (area.y + area.h / 2) / h,
-      // …and stand far enough back that the ball around the model fits inside it.
-      d: 1 / Math.sin(Math.atan(across * halfFov)),
-      az: v.azimuth,
-      el: v.elevation,
-      sw: v.swing,
-    };
+    if (stage.view === 'table' && gameFraming && gameFraming.w === w && gameFraming.h === h) {
+      goal = gameFraming.goal;
+    } else {
+      const area = freeArea(w, h);
+      const halfFov = Math.tan(rad(VIEW.fov) / 2);
+      const across = (Math.min(area.w, area.h) * v.fill) / h; // of the window's height
+      goal = {
+        // Shift the picture so the table's centre lands in the middle of the free area…
+        fx: 0.5 - (area.x + area.w / 2) / w,
+        fy: 0.5 - (area.y + area.h / 2) / h,
+        // …and stand far enough back that the ball around the model fits inside it.
+        d: 1 / Math.sin(Math.atan(across * halfFov)),
+        az: v.azimuth,
+        el: v.elevation,
+        sw: v.swing,
+      };
+      gameFraming = stage.view === 'table' && tableAnchor() ? { w, h, goal } : null;
+    }
     if (resized && canvas.classList.contains('ready')) {
       updateFraming(performance.now());
       draw();
